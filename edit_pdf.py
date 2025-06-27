@@ -4,28 +4,32 @@ sys.path.insert(0, "libs")
 import wx
 import fitz
 
-class PDFEditorFrame(wx.Frame):
-  def __init__(self):
-    super().__init__(parent=None, title="Cognituva PDF Editor", size=(800, 600))
-    panel = wx.Panel(self)
+class PDFEditorPanel(wx.Panel):
+  def __init__(self, parent, on_back):
+    super().__init__(parent)
+    self.on_back = on_back
 
-    open_btn = wx.Button(panel, label="Open PDF")
+    open_btn = wx.Button(self, label="Open PDF")
     open_btn.Bind(wx.EVT_BUTTON, self.on_open_pdf)
 
-    save_btn = wx.Button(panel, label="Save as New PDF")
+    save_btn = wx.Button(self, label="Save as New PDF")
     save_btn.Bind(wx.EVT_BUTTON, self.on_save_pdf)
 
-    self.text_area = wx.TextCtrl(panel, style=wx.TE_MULTILINE | wx.TE_DONTWRAP, size=(780, 500))
+    back_btn = wx.Button(self, label="Back")
+    back_btn.Bind(wx.EVT_BUTTON, lambda event: self.on_back())
+
+    self.text_area = wx.TextCtrl(self, style=wx.TE_MULTILINE | wx.TE_DONTWRAP)
 
     btn_sizer = wx.BoxSizer(wx.HORIZONTAL)
     btn_sizer.Add(open_btn, 0, wx.ALL, 5)
     btn_sizer.Add(save_btn, 0, wx.ALL, 5)
+    btn_sizer.Add(back_btn, 0, wx.ALL, 5)
 
     main_sizer = wx.BoxSizer(wx.VERTICAL)
     main_sizer.Add(btn_sizer, 0, wx.ALIGN_LEFT)
     main_sizer.Add(self.text_area, 1, wx.ALL | wx.EXPAND, 10)
 
-    panel.SetSizer(main_sizer)
+    self.SetSizer(main_sizer)
 
   def on_open_pdf(self, event):
     with wx.FileDialog(self, "Open PDF file", wildcard="PDF files (*.pdf)|*.pdf",
@@ -74,10 +78,3 @@ class PDFEditorFrame(wx.Frame):
       wx.MessageBox("PDF saved successfully.", "Success", wx.OK | wx.ICON_INFORMATION)
     except Exception as e:
       wx.MessageBox(f"Error saving PDF: {e}", "Error", wx.OK | wx.ICON_ERROR)
-
-if __name__ == "__main__":
-  print("Starting app...")
-  app = wx.App(False)
-  frame = PDFEditorFrame()
-  frame.Show()
-  app.MainLoop()

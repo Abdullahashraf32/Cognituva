@@ -1,22 +1,17 @@
-import sys
-sys.path.insert(0, "libs")
-
 import wx
 
-class TranscriptionFrame(wx.Frame):
-  def __init__(self):
-    super().__init__(parent=None, title="Transcribe Video", size=(600, 400))
-    panel = wx.Panel(self)
+class TranscriptionPanel(wx.Panel):
+  def __init__(self, parent, on_back):
+    super().__init__(parent)
+    self.on_back = on_back
 
-    instruction = wx.StaticText(panel, label="Feature under construction...")
+    instruction = wx.StaticText(self, label="Feature under construction...")
+
+    back_btn = wx.Button(self, label="Back")
+    back_btn.Bind(wx.EVT_BUTTON, lambda event: self.on_back())
 
     sizer = wx.BoxSizer(wx.VERTICAL)
     sizer.Add(instruction, 0, wx.ALL | wx.CENTER, 20)
+    sizer.Add(back_btn, 0, wx.ALL | wx.CENTER, 10)
 
-    panel.SetSizer(sizer)
-
-if __name__ == "__main__":
-  app = wx.App(False)
-  frame = TranscriptionFrame()
-  frame.Show()
-  app.MainLoop()
+    self.SetSizer(sizer)
