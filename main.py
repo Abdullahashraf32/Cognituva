@@ -1,6 +1,7 @@
 import wx
 from edit_pdf import PDFEditorPanel
 from transcribe_video import TranscriptionPanel
+from audio_video_converter import AudioVideoConverterPanel
 
 class MainMenu(wx.Frame):
   def __init__(self):
@@ -27,8 +28,12 @@ class MainMenu(wx.Frame):
     edit_pdf_btn = wx.Button(menu_panel, label="Edit PDF")
     edit_pdf_btn.Bind(wx.EVT_BUTTON, self.open_pdf_editor)
 
+    convert_btn = wx.Button(menu_panel, label="Audio/Video Converter")
+    convert_btn.Bind(wx.EVT_BUTTON, self.open_converter)
+
     sizer.Add(transcribe_btn, 0, wx.ALL | wx.EXPAND, 10)
     sizer.Add(edit_pdf_btn, 0, wx.ALL | wx.EXPAND, 10)
+    sizer.Add(convert_btn, 0, wx.ALL | wx.EXPAND, 10)
 
     menu_panel.SetSizer(sizer)
 
@@ -44,6 +49,10 @@ class MainMenu(wx.Frame):
 
   def open_transcribe(self, event=None):
     panel = TranscriptionPanel(self, on_back=self.show_main_menu)
+    self.show_panel(panel)
+
+  def open_converter(self, event=None):
+    panel = AudioVideoConverterPanel(self, on_back=self.show_main_menu)
     self.show_panel(panel)
 
   def show_panel(self, new_panel):
