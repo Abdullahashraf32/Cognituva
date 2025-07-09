@@ -72,6 +72,10 @@ class SegmentListPanel(wx.Panel):
     self.remove_format_all_id = wx.NewIdRef()
     self.select_all_id = wx.NewIdRef()
     self.last_selected_indices = []
+    self.move_up_id = wx.NewIdRef()
+    self.move_down_id = wx.NewIdRef()
+    self.move_last_to_first_id = wx.NewIdRef()
+    self.move_first_to_last_id = wx.NewIdRef()
     self.align_shortcuts = {
   (wx.ACCEL_SHIFT, ord('R')): ("Top Right", r"{\an9}"),
   (wx.ACCEL_CTRL, ord('R')): ("Middle Right", r"{\an6}"),
@@ -113,7 +117,11 @@ class SegmentListPanel(wx.Panel):
       wx.AcceleratorEntry(wx.ACCEL_ALT | wx.ACCEL_SHIFT, wx.WXK_DELETE, self.remove_format_all_id),
       wx.AcceleratorEntry(wx.ACCEL_CTRL, ord('A'), self.select_all_id),
       wx.AcceleratorEntry(wx.ACCEL_CTRL, ord('Z'), undo_id),
-wx.AcceleratorEntry(wx.ACCEL_CTRL, ord('Y'), redo_id),
+      wx.AcceleratorEntry(wx.ACCEL_CTRL, ord('Y'), redo_id),
+      wx.AcceleratorEntry(wx.ACCEL_ALT | wx.ACCEL_SHIFT, wx.WXK_UP, self.move_up_id),
+      wx.AcceleratorEntry(wx.ACCEL_ALT | wx.ACCEL_SHIFT, wx.WXK_DOWN, self.move_down_id),
+      wx.AcceleratorEntry(wx.ACCEL_ALT | wx.ACCEL_SHIFT, wx.WXK_HOME, self.move_last_to_first_id),
+      wx.AcceleratorEntry(wx.ACCEL_ALT | wx.ACCEL_SHIFT, wx.WXK_END, self.move_first_to_last_id),
     ]
 
     for (mod, key), (label, tag) in self.align_shortcuts.items():
@@ -134,6 +142,10 @@ wx.AcceleratorEntry(wx.ACCEL_CTRL, ord('Y'), redo_id),
     self.Bind(wx.EVT_MENU, lambda e: self.select_all_segments(), id=self.select_all_id)
     self.Bind(wx.EVT_MENU, lambda e: self.restore_state(self.undo_stack, self.redo_stack, "Undo"), id=undo_id)
     self.Bind(wx.EVT_MENU, lambda e: self.restore_state(self.redo_stack, self.undo_stack, "Redo"), id=redo_id)
+    self.Bind(wx.EVT_MENU, self.move_segment_up, id=self.move_up_id)
+    self.Bind(wx.EVT_MENU, self.move_segment_down, id=self.move_down_id)
+    self.Bind(wx.EVT_MENU, self.move_last_to_first, id=self.move_last_to_first_id)
+    self.Bind(wx.EVT_MENU, self.move_first_to_last, id=self.move_first_to_last_id)
    
   def on_listbox_focus(self, event):
     if self.last_selected_indices:
@@ -191,6 +203,18 @@ wx.AcceleratorEntry(wx.ACCEL_CTRL, ord('Y'), redo_id),
       lines.append(line)
     self.set_segments(lines)
 
+  def renumber_and_set_segments(self, lines):
+    updated_lines = []
+    for i, line in enumerate(lines, start=1):
+      parts = line.strip().split("\n")
+      if len(parts) < 3:
+        updated_lines.append(line)
+        continue
+      _, timing, *text_lines = parts
+      updated_text = "\n".join(text_lines)
+      updated_lines.append(f"{i}\n{timing}\n{updated_text}")
+    self.set_segments(updated_lines)
+
   def save_state(self):
     self.undo_stack.append(list(self.listbox.GetItems()))
     self.redo_stack.clear()
@@ -215,13 +239,13 @@ wx.AcceleratorEntry(wx.ACCEL_CTRL, ord('Y'), redo_id),
 
     menu = wx.Menu()
 
-    edit_item = menu.Append(wx.ID_ANY, "Edit Segment")
+    edit_item = menu.Append(self.edit_segment_id, "Edit Segment\tF2")
     self.Bind(wx.EVT_MENU, lambda e: self.edit_segment(index), edit_item)
 
     menu.AppendSeparator()
 
-    undo_item = menu.Append(wx.ID_ANY, "Undo")
-    redo_item = menu.Append(wx.ID_ANY, "Redo")
+    undo_item = menu.Append(wx.ID_ANY, "Undo\tCtrl+Z")
+    redo_item = menu.Append(wx.ID_ANY, "Redo\tCtrl+Y")
 
     if not self.undo_stack:
       undo_item.Enable(False)
@@ -232,13 +256,13 @@ wx.AcceleratorEntry(wx.ACCEL_CTRL, ord('Y'), redo_id),
     self.Bind(wx.EVT_MENU, lambda e: self.restore_state(self.redo_stack, self.undo_stack, "Redo"), redo_item)
 
     menu.AppendSeparator()
-    select_all_item = menu.Append(wx.ID_ANY, "Select All Segments")
+    select_all_item = menu.Append(self.select_all_id, "Select All Segments\tCtrl+A")
     self.Bind(wx.EVT_MENU, lambda e: self.select_all_segments(), select_all_item)
 
     remove_seg_menu = wx.Menu()
-    remove_item = remove_seg_menu.Append(wx.ID_ANY, "Remove")
+    remove_item = remove_seg_menu.Append(self.remove_segment_id, "Remove\tDelete")
     self.Bind(wx.EVT_MENU, lambda e: self.remove_item(index), remove_item)
-    remove_all = remove_seg_menu.Append(wx.ID_ANY, "Remove All")
+    remove_all = remove_seg_menu.Append(self.remove_all_segments_id, "Remove All\tShift+Delete")
     self.Bind(wx.EVT_MENU, lambda e: self.clear_all(), remove_all)
     menu.AppendSubMenu(remove_seg_menu, "Remove Segments")
 
@@ -283,6 +307,18 @@ wx.AcceleratorEntry(wx.ACCEL_CTRL, ord('Y'), redo_id),
     self.Bind(wx.EVT_MENU, self.remove_all_formats_all_segments, all_seg_item)
 
     menu.AppendSubMenu(remove_menu, "Remove Format")
+    move_menu = wx.Menu()
+    move_up_item = move_menu.Append(self.move_up_id, "Move Segment Up\tAlt+Shift+Up")
+    move_down_item = move_menu.Append(self.move_down_id, "Move Segment Down\tAlt+Shift+Down")
+    move_last_to_first_item = move_menu.Append(self.move_last_to_first_id, "Move Last Segment to First\tAlt+Shift+Home")
+    move_first_to_last_item = move_menu.Append(self.move_first_to_last_id, "Move First Segment to Last\tAlt+Shift+End")
+
+    self.Bind(wx.EVT_MENU, self.move_segment_up, move_up_item)
+    self.Bind(wx.EVT_MENU, self.move_segment_down, move_down_item)
+    self.Bind(wx.EVT_MENU, self.move_last_to_first, move_last_to_first_item)
+    self.Bind(wx.EVT_MENU, self.move_first_to_last, move_first_to_last_item)
+
+    menu.AppendSubMenu(move_menu, "Move Segments")
     self.PopupMenu(menu)
     menu.Destroy()
 
@@ -323,6 +359,66 @@ wx.AcceleratorEntry(wx.ACCEL_CTRL, ord('Y'), redo_id),
     if self.announce_callback:
       self.announce_callback("all segments selected")
     self.last_selected_indices = list(range(count))
+
+  def move_segment_up(self, event):
+    selections = self.listbox.GetSelections()
+    if not selections or selections[0] == 0:
+      return
+    self.save_state()
+    i = selections[0]
+    above = i - 1
+    items = self.listbox.GetItems()
+    items[i], items[above] = items[above], items[i]
+    self.renumber_and_set_segments(items)
+    self.listbox.Select(above)
+    self.last_selected_indices = [above]
+    self.sync_output_box()
+    if self.announce_callback:
+      self.announce_callback("segment moved up")
+
+  def move_segment_down(self, event):
+    selections = self.listbox.GetSelections()
+    if not selections or selections[0] == self.listbox.GetCount() - 1:
+      return
+    self.save_state()
+    i = selections[0]
+    below = i + 1
+    items = self.listbox.GetItems()
+    items[i], items[below] = items[below], items[i]
+    self.renumber_and_set_segments(items)
+    self.listbox.Select(below)
+    self.last_selected_indices = [below]
+    self.sync_output_box()
+    if self.announce_callback:
+      self.announce_callback("segment moved down")
+
+  def move_last_to_first(self, event):
+    count = self.listbox.GetCount()
+    if count < 2:
+      return
+    self.save_state()
+    items = self.listbox.GetItems()
+    items[0], items[-1] = items[-1], items[0]
+    self.renumber_and_set_segments(items)
+    self.listbox.Select(0)
+    self.last_selected_indices = [0]
+    self.sync_output_box()
+    if self.announce_callback:
+      self.announce_callback("last segment moved to first")
+
+  def move_first_to_last(self, event):
+    count = self.listbox.GetCount()
+    if count < 2:
+      return
+    self.save_state()
+    items = self.listbox.GetItems()
+    items[0], items[-1] = items[-1], items[0]
+    self.renumber_and_set_segments(items)
+    self.listbox.Select(count - 1)
+    self.last_selected_indices = [count - 1]
+    self.sync_output_box()
+    if self.announce_callback:
+      self.announce_callback("first segment moved to last")
 
   def toggle_style(self, style_key, indices=None):
     if indices is None:
