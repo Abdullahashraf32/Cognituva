@@ -18,17 +18,17 @@ class AudioVideoConverterPanel(wx.Panel):
 
       main_sizer = wx.BoxSizer(wx.VERTICAL)
 
-      self.beep_checkbox = wx.CheckBox(self, label="Beep while conversion is running")
+      self.beep_checkbox = wx.CheckBox(self, label="&Beep while conversion is running")
       main_sizer.Add(self.beep_checkbox, 0, wx.ALL, 10)
 
-      self.save_in_docs_checkbox = wx.CheckBox(self, label="Save output to  Documents")
+      self.save_in_docs_checkbox = wx.CheckBox(self, label="Sa&ve output to  Documents")
       main_sizer.Add(self.save_in_docs_checkbox, 0, wx.ALL, 10)
 
-      self.open_folder_checkbox = wx.CheckBox(self, label="Open containing folder after conversion")
+      self.open_folder_checkbox = wx.CheckBox(self, label="O&pen containing folder after conversion")
       main_sizer.Add(self.open_folder_checkbox, 0, wx.ALL, 10)
 
       self.type_choice = wx.RadioBox(
-          self, label="Select Type",
+          self, label="Select &Type",
           choices=["Audio", "Video"],
           majorDimension=1,
           style=wx.RA_SPECIFY_ROWS
@@ -37,23 +37,23 @@ class AudioVideoConverterPanel(wx.Panel):
       main_sizer.Add(self.type_choice, 0, wx.ALL | wx.EXPAND, 10)
 
       format_sizer = wx.BoxSizer(wx.HORIZONTAL)
-      format_sizer.Add(wx.StaticText(self, label="Output Format:"), 0, wx.ALIGN_CENTER_VERTICAL | wx.RIGHT, 5)
+      format_sizer.Add(wx.StaticText(self, label="Output &Format:"), 0, wx.ALIGN_CENTER_VERTICAL | wx.RIGHT, 5)
       self.format_combo = wx.ComboBox(self, choices=[], style=wx.CB_READONLY)
       format_sizer.Add(self.format_combo, 1)
       main_sizer.Add(format_sizer, 0, wx.ALL | wx.EXPAND, 10)
 
-      self.web_optimize = wx.CheckBox(self, label="Web Optimize")
+      self.web_optimize = wx.CheckBox(self, label="&Web Optimize")
       self.web_optimize.Bind(wx.EVT_CHECKBOX, lambda evt: self.update_controls_state())
       self.web_optimize.Disable()
       main_sizer.Add(self.web_optimize, 0, wx.ALL, 10)
 
-      video_options_box = wx.StaticBoxSizer(wx.StaticBox(self, label="Video Options"), wx.VERTICAL)
+      video_options_box = wx.StaticBoxSizer(wx.StaticBox(self, label="Vi&deo Options"), wx.VERTICAL)
 
       resolution_sizer = wx.BoxSizer(wx.HORIZONTAL)
-      resolution_sizer.Add(wx.StaticText(self, label="Width:"), 0, wx.ALIGN_CENTER_VERTICAL | wx.RIGHT, 5)
+      resolution_sizer.Add(wx.StaticText(self, label="W&idth:"), 0, wx.ALIGN_CENTER_VERTICAL | wx.RIGHT, 5)
       self.width_input = wx.TextCtrl(self)
       resolution_sizer.Add(self.width_input, 1, wx.RIGHT, 10)
-      resolution_sizer.Add(wx.StaticText(self, label="Height:"), 0, wx.ALIGN_CENTER_VERTICAL | wx.RIGHT, 5)
+      resolution_sizer.Add(wx.StaticText(self, label="&Height:"), 0, wx.ALIGN_CENTER_VERTICAL | wx.RIGHT, 5)
       self.height_input = wx.TextCtrl(self)
       resolution_sizer.Add(self.height_input, 1)
       video_options_box.Add(resolution_sizer, 0, wx.ALL | wx.EXPAND, 5)
@@ -66,7 +66,7 @@ class AudioVideoConverterPanel(wx.Panel):
 
       main_sizer.Add(video_options_box, 0, wx.ALL | wx.EXPAND, 10)
 
-      self.burnin_checkbox = wx.CheckBox(self, label="Burn-in subtitle into video")
+      self.burnin_checkbox = wx.CheckBox(self, label="B&urn-in subtitle into video")
       self.burnin_checkbox.Bind(wx.EVT_CHECKBOX, self.on_burnin_toggle)
       main_sizer.Add(self.burnin_checkbox, 0, wx.ALL, 10)
 
@@ -74,24 +74,24 @@ class AudioVideoConverterPanel(wx.Panel):
       subtitle_sizer = wx.BoxSizer(wx.VERTICAL)
 
       lang_sizer = wx.BoxSizer(wx.HORIZONTAL)
-      lang_sizer.Add(wx.StaticText(self.subtitle_panel, label="Subtitle Language:"), 0, wx.ALIGN_CENTER_VERTICAL | wx.RIGHT, 5)
+      lang_sizer.Add(wx.StaticText(self.subtitle_panel, label="&Subtitle Language:"), 0, wx.ALIGN_CENTER_VERTICAL | wx.RIGHT, 5)
       self.subtitle_lang_combo = wx.ComboBox(self.subtitle_panel, choices=["English", "Arabic", "French", "German"], style=wx.CB_READONLY)
       self.subtitle_lang_combo.SetSelection(0)
       lang_sizer.Add(self.subtitle_lang_combo, 1)
 
       encoding_sizer = wx.BoxSizer(wx.HORIZONTAL)
-      encoding_sizer.Add(wx.StaticText(self.subtitle_panel, label="Encoding:"), 0, wx.ALIGN_CENTER_VERTICAL | wx.RIGHT, 5)
+      encoding_sizer.Add(wx.StaticText(self.subtitle_panel, label="&Encoding:"), 0, wx.ALIGN_CENTER_VERTICAL | wx.RIGHT, 5)
       self.subtitle_encoding_combo = wx.ComboBox(self.subtitle_panel, choices=["UTF-8", "windows-1256", "ISO-8859-1", "Shift_JIS"], style=wx.CB_READONLY)
       self.subtitle_encoding_combo.SetSelection(0)
       encoding_sizer.Add(self.subtitle_encoding_combo, 1)
 
-      self.play_after_burn_checkbox = wx.CheckBox(self.subtitle_panel, label="Play video after burn-in")
+      self.play_after_burn_checkbox = wx.CheckBox(self.subtitle_panel, label="P&lay video after burn-in")
       subtitle_sizer.Add(self.play_after_burn_checkbox, 0, wx.TOP, 5)
       self.play_after_burn_checkbox.Hide()
 
       file_sizer = wx.BoxSizer(wx.HORIZONTAL)
       self.subtitle_path = wx.TextCtrl(self.subtitle_panel, style=wx.TE_READONLY)
-      browse_sub_btn = wx.Button(self.subtitle_panel, label="Browse Subtitle")
+      browse_sub_btn = wx.Button(self.subtitle_panel, label="B&rowse Subtitle")
       browse_sub_btn.Bind(wx.EVT_BUTTON, self.on_browse_subtitle)
       file_sizer.Add(self.subtitle_path, 1, wx.RIGHT, 5)
       file_sizer.Add(browse_sub_btn)
@@ -104,24 +104,24 @@ class AudioVideoConverterPanel(wx.Panel):
       main_sizer.Add(self.subtitle_panel, 0, wx.ALL | wx.EXPAND, 10)
 
       bitrate_sizer = wx.BoxSizer(wx.HORIZONTAL)
-      bitrate_sizer.Add(wx.StaticText(self, label="Bitrate (kbps):"), 0, wx.ALIGN_CENTER_VERTICAL | wx.RIGHT, 5)
+      bitrate_sizer.Add(wx.StaticText(self, label="Bi&trate (kbps):"), 0, wx.ALIGN_CENTER_VERTICAL | wx.RIGHT, 5)
       self.bitrate_combo = wx.ComboBox(self, choices=["64", "96", "128", "192", "256", "320"], style=wx.CB_READONLY)
       self.bitrate_combo.SetSelection(2)
       bitrate_sizer.Add(self.bitrate_combo, 1)
       main_sizer.Add(bitrate_sizer, 0, wx.ALL | wx.EXPAND, 10)
 
-      self.channels_radio = wx.RadioBox(self, label="Channels", choices=["Mono", "Stereo"], majorDimension=1, style=wx.RA_SPECIFY_ROWS)
+      self.channels_radio = wx.RadioBox(self, label="&Channels", choices=["Mono", "Stereo"], majorDimension=1, style=wx.RA_SPECIFY_ROWS)
       main_sizer.Add(self.channels_radio, 0, wx.ALL | wx.EXPAND, 10)
 
       volume_sizer = wx.BoxSizer(wx.HORIZONTAL)
-      volume_sizer.Add(wx.StaticText(self, label="Volume (%):"), 0, wx.ALIGN_CENTER_VERTICAL | wx.RIGHT, 5)
+      volume_sizer.Add(wx.StaticText(self, label="Volu&me (%):"), 0, wx.ALIGN_CENTER_VERTICAL | wx.RIGHT, 5)
       self.volume_combo = wx.ComboBox(self, choices=["50", "75", "100", "125", "150", "200"], style=wx.CB_READONLY)
       self.volume_combo.SetSelection(2)
       volume_sizer.Add(self.volume_combo, 1)
       main_sizer.Add(volume_sizer, 0, wx.ALL | wx.EXPAND, 10)
 
       sample_sizer = wx.BoxSizer(wx.HORIZONTAL)
-      sample_sizer.Add(wx.StaticText(self, label="Sample Rate (Hz):"), 0, wx.ALIGN_CENTER_VERTICAL | wx.RIGHT, 5)
+      sample_sizer.Add(wx.StaticText(self, label="S&ample Rate (Hz):"), 0, wx.ALIGN_CENTER_VERTICAL | wx.RIGHT, 5)
       self.sample_rate_combo = wx.ComboBox(self, choices=["8000", "16000", "22050", "32000", "44100", "48000", "96000"], style=wx.CB_READONLY)
       self.sample_rate_combo.SetSelection(4)
       sample_sizer.Add(self.sample_rate_combo, 1)
@@ -129,17 +129,17 @@ class AudioVideoConverterPanel(wx.Panel):
 
       input_file_sizer = wx.BoxSizer(wx.HORIZONTAL)
       self.input_path = wx.TextCtrl(self, style=wx.TE_READONLY)
-      browse_btn = wx.Button(self, label="Browse")
+      browse_btn = wx.Button(self, label="Ch&oose file")
       browse_btn.Bind(wx.EVT_BUTTON, self.on_browse)
       input_file_sizer.Add(self.input_path, 1, wx.RIGHT, 5)
       input_file_sizer.Add(browse_btn)
       main_sizer.Add(input_file_sizer, 0, wx.ALL | wx.EXPAND, 10)
 
-      self.convert_btn = wx.Button(self, label="Start Conversion")
+      self.convert_btn = wx.Button(self, label="S&tart Conversion")
       self.convert_btn.Bind(wx.EVT_BUTTON, self.on_convert)
       main_sizer.Add(self.convert_btn, 0, wx.ALL | wx.ALIGN_CENTER, 10)
 
-      back_btn = wx.Button(self, label="Back")
+      back_btn = wx.Button(self, label="&Back")
       back_btn.Bind(wx.EVT_BUTTON, lambda evt: self.on_back())
       main_sizer.Add(back_btn, 0, wx.ALL | wx.ALIGN_CENTER, 10)
 
