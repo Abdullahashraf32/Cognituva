@@ -1,4 +1,3 @@
-import wx
 import os
 import sys
 import subprocess
@@ -9,6 +8,13 @@ base_path = os.path.dirname(__file__)
 ffmpeg_path = os.path.join(base_path, "libs", "bin", "ffmpeg.exe")
 ffprobe_path = os.path.join(base_path, "libs", "bin", "ffprobe.exe")
 
+libs_path = os.path.join(os.path.dirname(__file__), "libs")
+
+wx_lib_path = os.path.join(libs_path, "wx")
+if wx_lib_path not in sys.path:
+  sys.path.insert(0, wx_lib_path)
+
+import wx
 class AudioVideoConverterPanel(wx.Panel):
   def __init__(self, parent, on_back):
       super().__init__(parent)

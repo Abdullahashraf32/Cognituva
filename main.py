@@ -1,8 +1,16 @@
-import wx
+import sys
+import os
 from transcribe_video import TranscriptionPanel
 from audio_video_converter import AudioVideoConverterPanel
 from settings_utils import load_settings, save_settings
 
+libs_path = os.path.join(os.path.dirname(__file__), "libs")
+
+wx_lib_path = os.path.join(libs_path, "wx")
+if wx_lib_path not in sys.path:
+  sys.path.insert(0, wx_lib_path)
+
+import wx
 class MainMenu(wx.Frame):
   def __init__(self):
     super().__init__(None, title="Cognituva", size=(600, 400))

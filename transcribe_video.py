@@ -1,4 +1,3 @@
-import wx
 import os
 import sys
 import shutil
@@ -7,6 +6,7 @@ import time
 import winsound
 import re
 from settings_utils import format_srt_time, format_segments_to_srt
+import tempfile
 
 libs_path = os.path.join(os.path.dirname(__file__), "libs")
 sys.path.insert(0, libs_path)
@@ -21,8 +21,10 @@ from googletrans import Translator
 import vlc
 import comtypes.client
 import tolk
+import wx
 from segment_list import SegmentListPanel
 from dialogs import FilterDialog
+from ass_writer import generate_ass_file
 
 MODEL_WARNINGS = {
   "medium": True,
@@ -315,6 +317,7 @@ class TranscriptionPanel(wx.Panel):
   def setup_shortcuts(self):
     shortcut_actions = [
     {"key": (wx.ACCEL_CTRL, ord("P")), "handler": self.on_toggle_play},
+    {"key": (wx.ACCEL_CTRL | wx.ACCEL_SHIFT, ord("P")), "handler": self.on_play_with_subtitles},
     {"key": (wx.ACCEL_CTRL, wx.WXK_SPACE), "handler": self.on_pause_resume},
     {"key": (wx.ACCEL_SHIFT, wx.WXK_LEFT), "handler": lambda evt: self.vlc_player.seek_relative(-1)},
     {"key": (wx.ACCEL_SHIFT, wx.WXK_RIGHT), "handler": lambda evt: self.vlc_player.seek_relative(1)},
@@ -397,8 +400,16 @@ class TranscriptionPanel(wx.Panel):
 
     control_sizer = wx.BoxSizer(wx.HORIZONTAL)
 
-    self.toggle_btn = wx.Button(self, label="&Play")
-    self.toggle_btn.Bind(wx.EVT_BUTTON, self.on_toggle_play)
+    self.toggle_btn = wx.Button(self, label="Play")
+    menu = wx.Menu()
+
+    item_play = menu.Append(wx.ID_ANY, "Play / Stop\tCtrl+P")
+    item_sub_play = menu.Append(wx.ID_ANY, "Play with Subtitles\tCtrl+Shift+P")
+
+    self.Bind(wx.EVT_MENU, self.on_toggle_play, item_play)
+    self.Bind(wx.EVT_MENU, self.on_play_with_subtitles, item_sub_play)
+
+    self.toggle_btn.Bind(wx.EVT_BUTTON, lambda evt: self.toggle_btn.PopupMenu(menu))
     control_sizer.Add(self.toggle_btn, 0, wx.RIGHT, 5)
 
     self.pause_btn = wx.Button(self, label="Pa&use/Resume")
@@ -431,6 +442,11 @@ class TranscriptionPanel(wx.Panel):
   def cleanup(self):
     if hasattr(self, "cleaned") and self.cleaned:
       return
+    if hasattr(self, "temp_subtitle_path") and os.path.exists(self.temp_subtitle_path):
+      try:
+        os.remove(self.temp_subtitle_path)
+      except Exception:
+        pass
     self.cleaned = True
     self.vlc_player.stop()
     tolk.unload()
@@ -468,6 +484,40 @@ class TranscriptionPanel(wx.Panel):
     if self.announce_enabled:
       self.announce("Pause" if self.vlc_player.is_paused else "Resume")
 
+  def on_play_with_subtitles(self, event=None):
+    srt_text = self.output_box.GetValue().strip()
+    if not srt_text:
+      wx.MessageBox("Output box is empty.", "No Subtitles")
+      return
+
+    state = self.vlc_player.player.get_state()
+
+    if state == vlc.State.Playing:
+      self.vlc_player.pause()
+      if self.announce_enabled:
+        self.announce("Pause with Subtitles")
+      return
+
+    if state == vlc.State.Paused:
+      self.vlc_player.pause()
+      self.timer.Start(500)
+      if self.announce_enabled:
+        self.announce("Resume with Subtitles")
+      return
+
+    temp_ass_path = generate_ass_file(srt_text)
+    self.temp_subtitle_path = temp_ass_path
+
+    if hasattr(self, "file_path"):
+      self.vlc_player.set_media(self.file_path)
+      self.vlc_player.media.add_option(f":sub-file={temp_ass_path}")
+      self.vlc_player.play()
+      self.finalize_play_setup()
+      if self.announce_enabled:
+        self.announce("Play with Subtitles")
+    else:
+      wx.MessageBox("Please select a video file first.", "Error")
+ 
   def on_open_video(self, event):
     wildcard = (
       "Video files (*.mp4;*.mkv;*.avi;*.mov;*.webm)|*.mp4;*.mkv;*.avi;*.mov;*.webm|"
@@ -539,7 +589,7 @@ class TranscriptionPanel(wx.Panel):
     new_rate = round(min(max(current_rate + delta, 0.5), 2.0), 1)
 
     if new_rate == current_rate:
-      return  # No change, so no need to announce
+      return
 
     self.vlc_player.set_rate(new_rate)
 
@@ -588,7 +638,6 @@ class TranscriptionPanel(wx.Panel):
     if not hasattr(self, "segment_list_panel"):
       return
 
-    # لو في حالة التحديث جاي من panel مش من المستخدم، منقدر نعمل flag مؤقت لتجنّب التكرار
     if getattr(self, "_updating_from_segments", False):
       return
 
@@ -596,7 +645,6 @@ class TranscriptionPanel(wx.Panel):
     if not text:
       return
 
-    # نحاول نعمل parsing سريع للأسطر بصيغة SRT
     lines = re.split(r"\n{2,}", text)
     self.segment_list_panel.set_segments(lines)
 

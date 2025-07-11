@@ -1,4 +1,12 @@
-import wx
+import sys
+import os
+libs_path = os.path.join(os.path.dirname(__file__), "libs")
+
+wx_lib_path = os.path.join(libs_path, "wx")
+if wx_lib_path not in sys.path:
+  sys.path.insert(0, wx_lib_path)
+
+import wx 
 
 class FilterDialog(wx.Dialog):
   def __init__(self, parent):
@@ -17,19 +25,17 @@ class FilterDialog(wx.Dialog):
 
     main_sizer = wx.BoxSizer(wx.VERTICAL)
 
-    # Group 1: Text Styles
     style_box = wx.StaticBox(self, label="Text Styles")
     style_sizer = wx.StaticBoxSizer(style_box, wx.VERTICAL)
 
-    first_checkbox = None  # 🔸 متغير لحفظ أول CheckBox
+    first_checkbox = None
     for idx, style in enumerate(self.styles):
       cb = wx.CheckBox(self, label=style)
       if idx == 0:
-        first_checkbox = cb  # ✅ نحفظ أول CheckBox
+        first_checkbox = cb
       self.selected_styles[style] = cb
       style_sizer.Add(cb, 0, wx.ALL, 5)
 
-    # Group 2: Alignments
     align_box = wx.StaticBox(self, label="Alignments")
     align_sizer = wx.StaticBoxSizer(align_box, wx.VERTICAL)
     for align in self.alignments:
@@ -37,7 +43,6 @@ class FilterDialog(wx.Dialog):
       self.selected_alignments[align] = cb
       align_sizer.Add(cb, 0, wx.ALL, 5)
 
-    # Group 3: Other Options
     other_box = wx.StaticBox(self, label="Other Options")
     other_sizer = wx.StaticBoxSizer(other_box, wx.VERTICAL)
     other_sizer.Add(self.recently_modified, 0, wx.ALL, 5)
@@ -58,10 +63,8 @@ class FilterDialog(wx.Dialog):
 
     main_sizer.Add(word_filter_sizer, 0, wx.EXPAND | wx.ALL, 10)
 
-    # Buttons
     btn_sizer = self.CreateSeparatedButtonSizer(wx.OK | wx.CANCEL)
 
-    # Add groups to main layout
     main_sizer.Add(style_sizer, 0, wx.EXPAND | wx.ALL, 10)
     main_sizer.Add(align_sizer, 0, wx.EXPAND | wx.ALL, 10)
 
@@ -76,7 +79,6 @@ class FilterDialog(wx.Dialog):
     self.SetSizer(main_sizer)
     self.Layout()
 
-    # ✅ بعد ترتيب العناصر، نحط الـ Focus
     if first_checkbox:
       first_checkbox.SetFocus()
 
@@ -108,11 +110,9 @@ class FilterDialog(wx.Dialog):
   def on_toggle_word_filter(self, event):
     enabled = self.filter_by_word_checkbox.IsChecked()
 
-    # Show/hide word input and case checkbox
     self.case_sensitive_checkbox.Show(enabled)
     self.word_input.Show(enabled)
 
-    # Disable/enable the other controls
     for cb in self.selected_styles.values():
       cb.Enable(not enabled)
     for cb in self.selected_alignments.values():

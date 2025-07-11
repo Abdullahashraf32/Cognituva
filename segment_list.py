@@ -1,6 +1,15 @@
-import wx 
+import sys
+import os
 import re
 from functools import partial
+
+libs_path = os.path.join(os.path.dirname(__file__), "libs")
+
+wx_lib_path = os.path.join(libs_path, "wx")
+if wx_lib_path not in sys.path:
+  sys.path.insert(0, wx_lib_path)
+
+import wx
 from settings_utils import format_srt_time, format_segments_to_srt
 from dialogs import FilterDialog
 
@@ -555,7 +564,16 @@ class SegmentListPanel(wx.Panel):
     elif tag_type == "color":
       font_color = tag
 
-    self.reapply_tags(index, font_name=font_name, font_color=font_color, styles=current_styles)
+    align_match = re.search(r"{\\an\d}", text)
+    align_tag = align_match.group() if align_match else None
+
+    self.reapply_tags(
+      index,
+      align_tag=align_tag,
+      font_name=font_name,
+      font_color=font_color,
+      styles=current_styles
+    )
 
   def reapply_tags(
     self,
@@ -564,7 +582,7 @@ class SegmentListPanel(wx.Panel):
     align_tag=None,
     font_name=None,
     font_color=None,
-    styles=None  # styles = set(["bold", "italic", "underline"])
+    styles=None
   ):
     selections = self.listbox.GetSelections()
     was_focused = index
@@ -577,8 +595,8 @@ class SegmentListPanel(wx.Panel):
     number, timing, *text_lines = lines
     text = "\n".join(text_lines)
 
-    text = re.sub(r"{\\an\d}", "", text)  # alignment
-    text = re.sub(r"<font[^>]*?>", "", text).replace("</font>", "")  # font tag
+    text = re.sub(r"{\\an\d}", "", text)
+    text = re.sub(r"<font[^>]*?>", "", text).replace("</font>", "")
     for tag in STYLE_TAGS.values():
       text = text.replace(f"<{tag}>", "").replace(f"</{tag}>", "")
 
@@ -601,12 +619,12 @@ class SegmentListPanel(wx.Panel):
         open_tags.append(f"<{tag}>")
         close_tags.insert(0, f"</{tag}>")
 
-    text = "".join(open_tags) + text + "".join(close_tags)
+    formatted_text = "".join(open_tags) + text + "".join(close_tags)
 
     if align_tag:
-      text = f"{align_tag}{text}"
+      formatted_text = f"{align_tag}{formatted_text}"
 
-    final_text = f"{number}\n{timing}\n{text}"
+    final_text = f"{number}\n{timing}\n{formatted_text}"
 
     self.listbox.SetString(index, final_text)
 
