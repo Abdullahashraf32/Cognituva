@@ -22,6 +22,7 @@ import vlc
 import comtypes.client
 import tolk
 from segment_list import SegmentListPanel
+from dialogs import FilterDialog
 
 MODEL_WARNINGS = {
   "medium": True,
@@ -233,6 +234,12 @@ class TranscriptionPanel(wx.Panel):
     self.readonly_chk.Bind(wx.EVT_CHECKBOX, self.toggle_readonly)
     main_sizer.Add(self.readonly_chk, 0, wx.LEFT | wx.RIGHT | wx.BOTTOM, 10)
 
+    self.filter_btn = wx.Button(self, label="&Filter By")
+    self.filter_btn.SetBitmap(wx.ArtProvider.GetBitmap(wx.ART_FIND, wx.ART_BUTTON, (16, 16)), wx.LEFT)
+    self.filter_btn.Bind(wx.EVT_BUTTON, self.on_open_filter_dialog)
+    self.add_hover_effect(self.filter_btn, wx.Colour(0, 153, 255))
+    main_sizer.Add(self.filter_btn, 0, wx.ALL | wx.ALIGN_CENTER, 5)
+
     output_box_sizer = wx.StaticBoxSizer(wx.VERTICAL, self, "Transcript Output")
 
     self.output_box = wx.TextCtrl(self, style=wx.TE_MULTILINE)
@@ -327,6 +334,7 @@ class TranscriptionPanel(wx.Panel):
     {"key": (wx.ACCEL_CTRL | wx.ACCEL_SHIFT, ord("S")), "handler": lambda evt: self.save_result(None)},
     {"key": (wx.ACCEL_CTRL, ord("T")), "handler": lambda evt: self.transcribe_video()},
     {"key": (wx.ACCEL_CTRL, wx.WXK_F4), "handler": lambda evt: self.confirm_exit(None)},
+    {"key": (wx.ACCEL_CTRL, ord("D")), "handler": self.on_open_filter_dialog},
     ]
 
     accel_entries = []
@@ -461,13 +469,53 @@ class TranscriptionPanel(wx.Panel):
       self.announce("Pause" if self.vlc_player.is_paused else "Resume")
 
   def on_open_video(self, event):
-      with wx.FileDialog(self, "Choose a video file", wildcard="Video files (*.mp4;*.mkv;*.avi)|*.mp4;*.mkv;*.avi",
-                        style=wx.FD_OPEN | wx.FD_FILE_MUST_EXIST) as dialog:
-          if dialog.ShowModal() == wx.ID_CANCEL:
-              return
-          path = dialog.GetPath()
-          self.file_path = path
-          self.on_video_selected(None)
+    wildcard = (
+      "Video files (*.mp4;*.mkv;*.avi;*.mov;*.webm)|*.mp4;*.mkv;*.avi;*.mov;*.webm|"
+      "Subtitle files (*.srt;*.vtt;*.ass;*.sub)|*.srt;*.vtt;*.ass;*.sub|"
+      "All files (*.*)|*.*"
+    )
+
+    with wx.FileDialog(self, "Open Video or Subtitle File", wildcard=wildcard,
+                      style=wx.FD_OPEN | wx.FD_FILE_MUST_EXIST) as dialog:
+      if dialog.ShowModal() == wx.ID_CANCEL:
+        return
+
+      path = dialog.GetPath()
+      ext = os.path.splitext(path)[1].lower()
+
+      if ext in [".mp4", ".mkv", ".avi", ".mov", ".webm"]:
+        self.file_path = path
+        self.on_video_selected(None)
+
+      elif ext in [".srt", ".vtt", ".ass", ".sub"]:
+        self.load_subtitle_file(path)
+
+      else:
+        wx.MessageBox("Unsupported file type.", "Error", wx.ICON_ERROR)
+
+  def load_subtitle_file(self, path):
+    try:
+      with open(path, "r", encoding="utf-8") as f:
+        content = f.read()
+
+      blocks = re.split(r"\n{2,}", content.strip())
+      self.segment_list_panel.set_segments(blocks)
+      self.output_box.SetValue(content)
+      self.last_saved_text = content
+      self.readonly_chk.Enable()
+
+      if self.announce_enabled:
+        self.announce("Subtitle loaded")
+
+    except Exception as e:
+      wx.MessageBox(f"Failed to load subtitle file:\n{e}", "Error", wx.ICON_ERROR)
+
+  def on_open_filter_dialog(self, event=None):
+    dlg = FilterDialog(self)
+    if dlg.ShowModal() == wx.ID_OK:
+      selected_filters = dlg.get_selected_filters()
+      self.segment_list_panel.apply_filters(selected_filters)
+    dlg.Destroy()
 
   def on_speed_change(self, event):
     self.vlc_player.set_rate(self.speed_slider.GetValue() / 10)

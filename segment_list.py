@@ -2,6 +2,7 @@ import wx
 import re
 from functools import partial
 from settings_utils import format_srt_time, format_segments_to_srt
+from dialogs import FilterDialog
 
 STYLE_TAGS = {
   "bold": "b",
@@ -61,6 +62,8 @@ class SegmentListPanel(wx.Panel):
     self.output_box = output_box
     self.announce_callback = announce_callback
     self.on_update = on_update
+    self.original_segments = []
+    self.current_filters = None
 
     self.undo_stack = []
     self.redo_stack = []
@@ -192,6 +195,8 @@ class SegmentListPanel(wx.Panel):
     self.listbox.Clear()
     for line in lines:
       self.listbox.Append(str(line))
+    if not self.current_filters:
+      self.original_segments = list(lines)
 
   def set_segments_from_objects(self, segments):
     lines = []
@@ -202,6 +207,8 @@ class SegmentListPanel(wx.Panel):
       line = f"{i}\n{start} --> {end}\n{text}"
       lines.append(line)
     self.set_segments(lines)
+    if not self.current_filters:
+        self.original_segments = list(lines)
 
   def renumber_and_set_segments(self, lines):
     updated_lines = []
@@ -662,3 +669,80 @@ class SegmentListPanel(wx.Panel):
     self.output_box.SetValue(full_text)
     if self.on_update:
       self.on_update()
+
+
+  def apply_filters(self, filters):
+    segments = list(self.original_segments)
+    if not segments:
+      return
+
+    self.current_filters = filters
+
+    selected_styles = filters.get("styles", [])
+    selected_alignments = filters.get("alignments", [])
+    recent_only = filters.get("recent", False)
+
+    filter_by_word = filters.get("filter_by_word", False)
+    case_sensitive = filters.get("case_sensitive", False)
+    word_query = filters.get("word_query", "").strip()
+
+    def match_style(text):
+      for style in selected_styles:
+        tag = STYLE_TAGS.get(style.lower())
+        if tag and f"<{tag}>" in text and f"</{tag}>" in text:
+          continue
+        else:
+          return False
+      return True if selected_styles else True
+
+    def match_alignment(text):
+      for align in selected_alignments:
+        tag = ALIGN_TAGS.get(align)
+        if tag and tag not in text:
+          return False
+      return True if selected_alignments else True
+
+    def match_recent(index):
+      if not recent_only:
+        return True
+      return index in self.last_selected_indices
+
+    def match_word(text):
+      if not filter_by_word or not word_query:
+        return True
+
+      query = re.sub(r'\s+', ' ', word_query.strip())
+      text_to_check = re.sub(r'\s+', ' ', text.strip())
+
+      if not case_sensitive:
+        query = query.lower()
+        text_to_check = text_to_check.lower()
+
+      return query in text_to_check
+
+    filtered = []
+    for i, seg in enumerate(segments):
+      lines = seg.strip().split("\n")
+      if len(lines) < 3:
+        continue
+      _, _, *text_lines = lines
+      text = "\n".join(text_lines)
+      if (
+        match_style(text)
+        and match_alignment(text)
+        and match_recent(i)
+        and match_word(text)
+      ):
+        filtered.append(seg.strip())
+
+    if (
+      not selected_styles
+      and not selected_alignments
+      and not recent_only
+      and not filter_by_word
+    ):
+      self.set_segments(self.original_segments)
+    else:
+      self.set_segments(filtered)
+
+    self.sync_output_box()
