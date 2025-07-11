@@ -242,7 +242,7 @@ class TranscriptionPanel(wx.Panel):
 
     output_box_sizer = wx.StaticBoxSizer(wx.VERTICAL, self, "Transcript Output")
 
-    self.output_box = wx.TextCtrl(self, style=wx.TE_MULTILINE)
+    self.output_box = wx.TextCtrl(self, style=wx.TE_MULTILINE | wx.TE_DONTWRAP)
     self.output_box.SetEditable(False)
 
     self.segment_list_panel = SegmentListPanel(
@@ -500,7 +500,7 @@ class TranscriptionPanel(wx.Panel):
 
       blocks = re.split(r"\n{2,}", content.strip())
       self.segment_list_panel.set_segments(blocks)
-      self.output_box.SetValue(content)
+      self.output_box.SetValue(self.wrap_text(content))
       self.last_saved_text = content
       self.readonly_chk.Enable()
 
@@ -554,6 +554,18 @@ class TranscriptionPanel(wx.Panel):
 
       self.announce(msg)
 
+  def wrap_text(self, text, max_width=45):
+    wrapped_lines = []
+    for line in text.splitlines():
+      while len(line) > max_width:
+        split_at = line.rfind(" ", 0, max_width)
+        if split_at == -1:
+          split_at = max_width
+        wrapped_lines.append(line[:split_at].strip())
+        line = line[split_at:].strip()
+      wrapped_lines.append(line)
+    return "\n".join(wrapped_lines)
+
   def on_seek(self, event):
     value = self.seek_slider.GetValue() / 1000
     self.vlc_player.set_position(value)
@@ -569,7 +581,7 @@ class TranscriptionPanel(wx.Panel):
   def on_segments_changed(self):
     if hasattr(self, "segment_list_panel"):
       srt_text = self.segment_list_panel.get_srt()
-      self.output_box.SetValue(srt_text)
+      self.output_box.SetValue(self.wrap_text(srt_text))
       self.last_saved_text = srt_text
 
   def on_output_box_updated(self, event):
@@ -692,7 +704,7 @@ class TranscriptionPanel(wx.Panel):
   def transcribe_video(self):
     if self.is_transcribing:
       self.stop_event.set()
-      self.output_box.AppendText("\nStopping...\n")
+      self.output_box.AppendText(self.wrap_text("\nStopping...\n"))
       return
 
     video_path = self.file_path if hasattr(self, "file_path") else None
