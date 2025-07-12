@@ -11,7 +11,7 @@ if wx_lib_path not in sys.path:
 
 import wx
 from settings_utils import format_srt_time, format_segments_to_srt
-from dialogs import FilterDialog
+from dialogs import FilterDialog, GoToDialog
 
 STYLE_TAGS = {
   "bold": "b",
@@ -161,12 +161,20 @@ class SegmentListPanel(wx.Panel):
    
   def on_listbox_focus(self, event):
     if self.last_selected_indices:
-      for i in range(self.listbox.GetCount()):
+      listbox_count = self.listbox.GetCount()
+    
+      for i in range(listbox_count):
         self.listbox.Deselect(i)
+
       for idx in self.last_selected_indices:
-        self.listbox.Select(idx)
-      self.listbox.SetFirstItem(self.last_selected_indices[0])
-      self.listbox.SetSelection(self.last_selected_indices[0])
+        if 0 <= idx < listbox_count:
+          self.listbox.Select(idx)
+
+      first_valid_idx = next((i for i in self.last_selected_indices if 0 <= i < listbox_count), None)
+      if first_valid_idx is not None:
+        self.listbox.SetFirstItem(first_valid_idx)
+        self.listbox.SetSelection(first_valid_idx)
+
     event.Skip()
 
   def edit_selected_segment(self):
@@ -375,6 +383,87 @@ class SegmentListPanel(wx.Panel):
     if self.announce_callback:
       self.announce_callback("all segments selected")
     self.last_selected_indices = list(range(count))
+
+  def apply_go_to(self, target_segment=None, range_start=None, range_end=None, exclusions=None):
+    total_segments = self.listbox.GetCount()
+    self.listbox.SetFocus()
+
+    if target_segment is None and range_start is None and range_end is None:
+      wx.MessageBox(
+        "Segment Number cannot be empty.",
+        "Input Required",
+        wx.OK | wx.ICON_WARNING
+      )
+      return
+
+    if target_segment is not None:
+      if 1 <= target_segment <= total_segments:
+        index = target_segment - 1
+        for i in range(total_segments):
+          self.listbox.Deselect(i)
+        self.listbox.SetSelection(index)
+        self.listbox.SetFirstItem(index)
+        self.last_selected_indices = [index]
+        if self.announce_callback:
+          self.announce_callback(f"focused segment {target_segment}")
+      else:
+        wx.MessageBox(
+          f"The segment number {target_segment} does not exist.",
+          "Segment Not Found",
+          wx.OK | wx.ICON_ERROR
+        )
+        return
+
+    if (range_start is not None and range_end is None) or (range_start is None and range_end is not None):
+      wx.MessageBox(
+        "Both 'Start From' and 'End To' fields must be filled to select a range.",
+        "Incomplete Range",
+        wx.OK | wx.ICON_WARNING
+      )
+      return
+
+    if range_start is not None and range_end is not None:
+      if not (1 <= range_start <= total_segments):
+        wx.MessageBox(
+          f"The 'Start From' value {range_start} is out of range (must be between 1 and {total_segments}).",
+          "Invalid Start",
+          wx.OK | wx.ICON_ERROR
+        )
+        return
+
+      if not (1 <= range_end <= total_segments):
+        wx.MessageBox(
+          f"The 'End To' value {range_end} is out of range (must be between 1 and {total_segments}).",
+          "Invalid End",
+          wx.OK | wx.ICON_ERROR
+        )
+        return
+
+      if range_start > range_end:
+        range_start, range_end = range_end, range_start
+
+      for i in range(total_segments):
+        self.listbox.Deselect(i)
+
+      selections = []
+      for i in range(range_start - 1, range_end):
+        if exclusions and (i + 1) in exclusions:
+          continue
+        self.listbox.Select(i)
+        selections.append(i)
+
+      if selections:
+        self.listbox.SetFirstItem(selections[0])
+        self.listbox.SetSelection(selections[0])
+        self.last_selected_indices = selections
+        if self.announce_callback:
+          self.announce_callback(f"selected segments {range_start} to {range_end} with exclusions")
+      else:
+        wx.MessageBox(
+          "No segments were selected. All items may have been excluded.",
+          "No Segments Selected",
+          wx.OK | wx.ICON_INFORMATION
+        )
 
   def move_segment_up(self, event):
     selections = self.listbox.GetSelections()

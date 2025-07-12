@@ -9,21 +9,18 @@ from settings_utils import format_srt_time, format_segments_to_srt
 import tempfile
 
 libs_path = os.path.join(os.path.dirname(__file__), "libs")
-sys.path.insert(0, libs_path)
 if libs_path not in sys.path:
   sys.path.insert(0, libs_path)
 cytolk_path = os.path.join(libs_path, "cytolk")
 if cytolk_path not in sys.path:
   sys.path.insert(0, cytolk_path)
 
-from faster_whisper import WhisperModel
-from googletrans import Translator
-import vlc
 import comtypes.client
 import tolk
 import wx
+import vlc
 from segment_list import SegmentListPanel
-from dialogs import FilterDialog
+from dialogs import FilterDialog, GoToDialog
 from ass_writer import generate_ass_file
 
 MODEL_WARNINGS = {
@@ -242,6 +239,11 @@ class TranscriptionPanel(wx.Panel):
     self.add_hover_effect(self.filter_btn, wx.Colour(0, 153, 255))
     main_sizer.Add(self.filter_btn, 0, wx.ALL | wx.ALIGN_CENTER, 5)
 
+    self.go_to_btn = wx.Button(self, label="&Go To")
+    self.go_to_btn.Bind(wx.EVT_BUTTON, self.on_open_go_to_dialog)
+    self.add_hover_effect(self.go_to_btn, wx.Colour(0, 204, 204))
+    main_sizer.Add(self.go_to_btn, 0, wx.ALL | wx.ALIGN_CENTER, 5)
+
     output_box_sizer = wx.StaticBoxSizer(wx.VERTICAL, self, "Transcript Output")
 
     self.output_box = wx.TextCtrl(self, style=wx.TE_MULTILINE | wx.TE_DONTWRAP)
@@ -338,6 +340,7 @@ class TranscriptionPanel(wx.Panel):
     {"key": (wx.ACCEL_CTRL, ord("T")), "handler": lambda evt: self.transcribe_video()},
     {"key": (wx.ACCEL_CTRL, wx.WXK_F4), "handler": lambda evt: self.confirm_exit(None)},
     {"key": (wx.ACCEL_CTRL, ord("D")), "handler": self.on_open_filter_dialog},
+    {"key": (wx.ACCEL_CTRL, ord("G")), "handler": self.on_open_go_to_dialog},
     ]
 
     accel_entries = []
@@ -567,6 +570,29 @@ class TranscriptionPanel(wx.Panel):
       self.segment_list_panel.apply_filters(selected_filters)
     dlg.Destroy()
 
+  def on_open_go_to_dialog(self, event=None):
+    dlg = GoToDialog(self)
+    if dlg.ShowModal() == wx.ID_OK:
+      values = dlg.get_values()
+      segment = values["go_to_segment"]
+      use_range = values["use_range"]
+      range_start = values["range_start"]
+      range_end = values["range_end"]
+      exclusions = values["exclusions"] if values["exclusions"] else None
+
+      if use_range:
+        self.segment_list_panel.apply_go_to(
+          range_start=range_start,
+          range_end=range_end,
+          exclusions=exclusions
+        )
+      else:
+        self.segment_list_panel.apply_go_to(
+          target_segment=segment
+        )
+
+    dlg.Destroy()
+
   def on_speed_change(self, event):
     self.vlc_player.set_rate(self.speed_slider.GetValue() / 10)
 
@@ -682,7 +708,7 @@ class TranscriptionPanel(wx.Panel):
     if self.is_model_downloaded(model):
       self.download_btn.SetLabel("U&ninstall")
     else:
-      self.download_btn.SetLabel("Download")
+      self.download_btn.SetLabel("&Download")
 
   def on_model_changed(self, event):
     self.update_model_button_state()
@@ -696,7 +722,7 @@ class TranscriptionPanel(wx.Panel):
       if dlg.ShowModal() == wx.ID_YES:
         shutil.rmtree(model_path)
         wx.MessageBox(f"Model '{model}' uninstalled.", "Done")
-        self.download_btn.SetLabel("Download")
+        self.download_btn.SetLabel("&Download")
       dlg.Destroy()
     else:
       if MODEL_WARNINGS.get(model):
@@ -740,7 +766,7 @@ class TranscriptionPanel(wx.Panel):
 
           wx.CallAfter(loading_dialog.Destroy)
           wx.CallAfter(wx.MessageBox, f"Model '{model}' downloaded.", "Success")
-          wx.CallAfter(self.download_btn.SetLabel, "Uninstall")
+          wx.CallAfter(self.download_btn.SetLabel, "U&ninstall")
         except Exception as e:
           wx.CallAfter(loading_dialog.Destroy)
           wx.CallAfter(wx.MessageBox, f"Error downloading model: {e}", "Error", wx.ICON_ERROR)
@@ -750,6 +776,7 @@ class TranscriptionPanel(wx.Panel):
       loading_dialog.ShowModal()
 
   def transcribe_video(self):
+    from faster_whisper import WhisperModel
     if self.is_transcribing:
       self.stop_event.set()
       self.output_box.AppendText(self.wrap_text("\nStopping...\n"))
@@ -774,7 +801,7 @@ class TranscriptionPanel(wx.Panel):
     self.output_box.SetValue("Running...")
     self.is_transcribing = True
     self.stop_event.clear()
-    self.start_btn.SetLabel("Stop")
+    self.start_btn.SetLabel("&Stop")
 
     def run_transcription():
       try:
@@ -792,6 +819,7 @@ class TranscriptionPanel(wx.Panel):
         if not self.stop_event.is_set():
           try:
             if task == "translate":
+              from googletrans import Translator
               translator = Translator()
               translated_lines = []
               for idx, seg in enumerate(segments, start=1):
@@ -820,7 +848,7 @@ class TranscriptionPanel(wx.Panel):
 
   def reset_transcription_button(self):
     self.is_transcribing = False
-    self.start_btn.SetLabel("Start")
+    self.start_btn.SetLabel("&Start")
     self.start_btn.Enable()
     self.transcription_thread = None
     self.stop_event.clear()

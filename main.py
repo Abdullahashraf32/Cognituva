@@ -1,10 +1,11 @@
 import sys
 import os
-from transcribe_video import TranscriptionPanel
-from audio_video_converter import AudioVideoConverterPanel
 from settings_utils import load_settings, save_settings
 
 libs_path = os.path.join(os.path.dirname(__file__), "libs")
+
+if libs_path not in sys.path:
+  sys.path.insert(0, libs_path)
 
 wx_lib_path = os.path.join(libs_path, "wx")
 if wx_lib_path not in sys.path:
@@ -53,11 +54,13 @@ class MainMenu(wx.Frame):
     wx.CallAfter(transcribe_btn.SetFocus)
 
   def open_transcribe(self, event=None):
+    from transcribe_video import TranscriptionPanel
     announce = self.settings.get("announce_shortcuts", True)
     panel = TranscriptionPanel(self, on_back=self.show_main_menu, announce_enabled=announce)
     self.show_panel(panel)
 
   def open_converter(self, event=None):
+    from audio_video_converter import AudioVideoConverterPanel
     panel = AudioVideoConverterPanel(self, on_back=self.show_main_menu)
     self.show_panel(panel)
 
