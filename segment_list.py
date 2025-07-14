@@ -208,6 +208,12 @@ class SegmentListPanel(wx.Panel):
       self.listbox.SetFirstItem(self.last_selected_indices[0])
       self.listbox.SetSelection(self.last_selected_indices[0])
 
+  def reset(self):
+    """Clear the current segment list and any selection."""
+    self.listbox.Clear()
+    self.listbox.SetSelection(wx.NOT_FOUND)
+    self.segments = []
+
   def set_segments(self, lines):
     self.listbox.Clear()
     for line in lines:

@@ -1,1 +1,12 @@
-{"announce_shortcuts": true}
+{
+  "announce_shortcuts": true,
+  "video_width": 600,
+  "video_height": 250,
+  "readonly": false,
+  "beep": true,
+  "after_action": "Focus output",
+  "shift_jump": 0.5,
+  "ctrl_jump": 1.0,
+  "alt_jump": 5.0,
+  "ctrl_shift_jump": 10.0
+}

@@ -33,13 +33,13 @@ class MainMenu(wx.Frame):
 
     sizer = wx.BoxSizer(wx.VERTICAL)
 
-    transcribe_btn = wx.Button(menu_panel, label="Transcribe Video")
+    transcribe_btn = wx.Button(menu_panel, label="&Transcribe Video")
     transcribe_btn.Bind(wx.EVT_BUTTON, self.open_transcribe)
-    self.announce_shortcuts_chk = wx.CheckBox(menu_panel, label="Enable shortcut announcements")
+    self.announce_shortcuts_chk = wx.CheckBox(menu_panel, label="&Enable shortcut announcements for Visually Impaired")
     self.announce_shortcuts_chk.SetValue(self.settings.get("announce_shortcuts", True))
     self.announce_shortcuts_chk.Bind(wx.EVT_CHECKBOX, self.on_toggle_announce)
 
-    convert_btn = wx.Button(menu_panel, label="Audio/Video Converter")
+    convert_btn = wx.Button(menu_panel, label="&Audio/Video Converter")
     convert_btn.Bind(wx.EVT_BUTTON, self.open_converter)
 
     sizer.Add(transcribe_btn, 0, wx.ALL | wx.EXPAND, 10)

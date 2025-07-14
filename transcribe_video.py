@@ -5,8 +5,16 @@ import threading
 import time
 import winsound
 import re
-from settings_utils import format_srt_time, format_segments_to_srt
+from settings_utils import (
+  load_settings,
+  save_settings,
+  format_srt_time,
+  format_segments_to_srt,
+  TranscriptionSettingsDialog
+)
+
 import tempfile
+import json
 
 libs_path = os.path.join(os.path.dirname(__file__), "libs")
 if libs_path not in sys.path:
@@ -18,6 +26,7 @@ if cytolk_path not in sys.path:
 import comtypes.client
 import tolk
 import wx
+import wx.adv
 import vlc
 from segment_list import SegmentListPanel
 from dialogs import FilterDialog, GoToDialog
@@ -151,6 +160,7 @@ class TranscriptionPanel(wx.Panel):
     self.transcription_thread = None
     self.stop_event = threading.Event()
     self.last_saved_text = ""
+    self.output_modified = False
     self.saved_path = None
     tolk.try_sapi(True)
     tolk.load()
@@ -191,6 +201,9 @@ class TranscriptionPanel(wx.Panel):
 
     main_sizer.Add(lang_box, 0, wx.ALL | wx.EXPAND, 10)
 
+    self.video_width = 800
+    self.video_height = 450
+
     video_controls = self.build_video_controls()
     main_sizer.Add(video_controls, 0, wx.EXPAND | wx.ALL, 10)
 
@@ -227,11 +240,11 @@ class TranscriptionPanel(wx.Panel):
     self.add_hover_effect(self.start_btn, wx.Colour(102, 0, 204))
     main_sizer.Add(self.start_btn, 0, wx.ALL | wx.ALIGN_CENTER, 10)
 
-    self.readonly_chk = wx.CheckBox(self, label="&Readonly")
-    self.readonly_chk.SetValue(True)
-    self.readonly_chk.Disable()
-    self.readonly_chk.Bind(wx.EVT_CHECKBOX, self.toggle_readonly)
-    main_sizer.Add(self.readonly_chk, 0, wx.LEFT | wx.RIGHT | wx.BOTTOM, 10)
+    self.preferences_btn = wx.Button(self, label="Pr&eferences")
+    self.preferences_btn.SetBitmap(wx.ArtProvider.GetBitmap(wx.ART_LIST_VIEW, wx.ART_BUTTON, (16, 16)), wx.LEFT)
+    self.preferences_btn.Bind(wx.EVT_BUTTON, self.on_open_settings_dialog)
+    self.add_hover_effect(self.preferences_btn, wx.Colour(102, 102, 255))
+    main_sizer.Add(self.preferences_btn, 0, wx.ALL | wx.ALIGN_CENTER, 5)
 
     self.filter_btn = wx.Button(self, label="&Filter By")
     self.filter_btn.SetBitmap(wx.ArtProvider.GetBitmap(wx.ART_FIND, wx.ART_BUTTON, (16, 16)), wx.LEFT)
@@ -291,6 +304,32 @@ class TranscriptionPanel(wx.Panel):
     main_sizer.Add(button_row, 0, wx.ALIGN_RIGHT | wx.ALL, 10)
 
     self.SetSizer(main_sizer)
+    self.shift_jump = 1
+    self.ctrl_jump = 5
+    self.alt_jump = 2
+    self.ctrl_shift_jump = 10
+
+    self.readonly_mode = True
+    self.enable_beep = False
+    self.after_transcription_action = "Show message"
+
+    settings = self.load_settings_from_file()
+    if settings:
+      self.settings_cache = settings
+      self.apply_settings(settings)
+    else:
+      self.apply_settings({
+        "shift_forward": self.shift_forward_seconds,
+        "shift_backward": self.shift_backward_seconds,
+        "ctrl_forward": self.ctrl_forward_seconds,
+        "ctrl_backward": self.ctrl_backward_seconds,
+        "video_width": self.video_width,
+        "video_height": self.video_height,
+        "readonly": self.readonly_mode,
+        "beep": self.enable_beep,
+        "after_action": self.after_transcription_action
+      })
+
     self.update_model_button_state()
 
     self.timer = wx.Timer(self)
@@ -316,24 +355,35 @@ class TranscriptionPanel(wx.Panel):
     button.Bind(wx.EVT_ENTER_WINDOW, on_enter)
     button.Bind(wx.EVT_LEAVE_WINDOW, on_leave)
 
+  def load_settings_from_file(self, path=None):
+    if path is None:
+      path = os.path.join(os.path.dirname(__file__), "settings.json")
+    try:
+      with open(path, "r", encoding="utf-8") as f:
+        settings = json.load(f)
+        return settings
+    except Exception:
+      return None
+
   def setup_shortcuts(self):
+    self.SetAcceleratorTable(wx.AcceleratorTable([]))
     shortcut_actions = [
     {"key": (wx.ACCEL_CTRL, ord("P")), "handler": self.on_toggle_play},
     {"key": (wx.ACCEL_CTRL | wx.ACCEL_SHIFT, ord("P")), "handler": self.on_play_with_subtitles},
     {"key": (wx.ACCEL_CTRL, wx.WXK_SPACE), "handler": self.on_pause_resume},
-    {"key": (wx.ACCEL_SHIFT, wx.WXK_LEFT), "handler": lambda evt: self.vlc_player.seek_relative(-1)},
-    {"key": (wx.ACCEL_SHIFT, wx.WXK_RIGHT), "handler": lambda evt: self.vlc_player.seek_relative(1)},
-    {"key": (wx.ACCEL_CTRL, wx.WXK_LEFT), "handler": lambda evt: self.vlc_player.seek_relative(-5)},
-    {"key": (wx.ACCEL_CTRL, wx.WXK_RIGHT), "handler": lambda evt: self.vlc_player.seek_relative(5)},
-    {"key": (wx.ACCEL_ALT, wx.WXK_LEFT), "handler": lambda evt: self.vlc_player.seek_relative(-10)},
-    {"key": (wx.ACCEL_ALT, wx.WXK_RIGHT), "handler": lambda evt: self.vlc_player.seek_relative(10)},
-    {"key": (wx.ACCEL_CTRL | wx.ACCEL_SHIFT, wx.WXK_LEFT), "handler": lambda evt: self.vlc_player.seek_relative(-15)},
-    {"key": (wx.ACCEL_CTRL | wx.ACCEL_SHIFT, wx.WXK_RIGHT), "handler": lambda evt: self.vlc_player.seek_relative(15)},
+    {"key": (wx.ACCEL_NORMAL, wx.WXK_F11), "handler": self.on_open_settings_dialog},
+    {"key": (wx.ACCEL_SHIFT, wx.WXK_LEFT), "handler": lambda evt: self.vlc_player.seek_relative(-self.shift_jump)},
+    {"key": (wx.ACCEL_SHIFT, wx.WXK_RIGHT), "handler": lambda evt: self.vlc_player.seek_relative(self.shift_jump)},
+    {"key": (wx.ACCEL_CTRL, wx.WXK_LEFT), "handler": lambda evt: self.vlc_player.seek_relative(-self.ctrl_jump)},
+    {"key": (wx.ACCEL_CTRL, wx.WXK_RIGHT), "handler": lambda evt: self.vlc_player.seek_relative(self.ctrl_jump)},
+    {"key": (wx.ACCEL_ALT, wx.WXK_LEFT), "handler": lambda evt: self.vlc_player.seek_relative(-self.alt_jump)},
+    {"key": (wx.ACCEL_ALT, wx.WXK_RIGHT), "handler": lambda evt: self.vlc_player.seek_relative(self.alt_jump)},
+    {"key": (wx.ACCEL_CTRL | wx.ACCEL_SHIFT, wx.WXK_LEFT), "handler": lambda evt: self.vlc_player.seek_relative(-self.ctrl_shift_jump)},
+    {"key": (wx.ACCEL_CTRL | wx.ACCEL_SHIFT, wx.WXK_RIGHT), "handler": lambda evt: self.vlc_player.seek_relative(self.ctrl_shift_jump)},
     {"key": (wx.ACCEL_CTRL, wx.WXK_UP), "handler": lambda evt: self.adjust_volume(5)},
     {"key": (wx.ACCEL_CTRL, wx.WXK_DOWN), "handler": lambda evt: self.adjust_volume(-5)},
     {"key": (wx.ACCEL_CTRL | wx.ACCEL_SHIFT, wx.WXK_UP), "handler": lambda evt: self.adjust_speed(0.1)},
     {"key": (wx.ACCEL_CTRL | wx.ACCEL_SHIFT, wx.WXK_DOWN), "handler": lambda evt: self.adjust_speed(-0.1)},
-    {"key": (wx.ACCEL_CTRL, ord("R")), "handler": lambda evt: self.toggle_readonly(None)},
     {"key": (wx.ACCEL_CTRL, ord("O")), "handler": self.on_open_video},
     {"key": (wx.ACCEL_CTRL, ord("S")), "handler": lambda evt: self.save_or_update_file(None)},
     {"key": (wx.ACCEL_CTRL | wx.ACCEL_SHIFT, ord("S")), "handler": lambda evt: self.save_result(None)},
@@ -350,14 +400,7 @@ class TranscriptionPanel(wx.Panel):
       self.Bind(wx.EVT_MENU, action["handler"], id=accel_id.GetId())
 
     self.SetAcceleratorTable(wx.AcceleratorTable(accel_entries))
-
-  def toggle_readonly(self, event):
-    current = self.readonly_chk.GetValue()
-    self.readonly_chk.SetValue(not current)
-    self.output_box.SetEditable(not self.readonly_chk.GetValue())
-    if self.announce_enabled:
-      msg = "Readonly On" if self.readonly_chk.GetValue() else "Readonly Off"
-      self.announce(msg)
+    self.GetTopLevelParent().SetAcceleratorTable(wx.AcceleratorTable(accel_entries))
 
   def confirm_exit(self, event):
     self.cleanup()
@@ -370,7 +413,7 @@ class TranscriptionPanel(wx.Panel):
     self.handle_unsaved_changes(proceed)
 
   def handle_unsaved_changes(self, proceed_callback):
-    if self.readonly_chk.IsChecked():
+    if not self.output_modified and self.output_box.GetValue() == self.last_saved_text:
       proceed_callback()
       return
 
@@ -394,9 +437,9 @@ class TranscriptionPanel(wx.Panel):
     video_sizer = wx.BoxSizer(wx.VERTICAL)
 
     self.video_panel = wx.Panel(self)
-    self.video_panel.SetMinSize((800, 450))
+    self.video_panel.SetMinSize((self.video_width, self.video_height))
     self.video_panel.SetBackgroundColour(wx.BLACK)
-    video_sizer.Add(self.video_panel, 1, wx.EXPAND | wx.ALL, 10)
+    video_sizer.Add(self.video_panel, 0, wx.ALIGN_CENTER | wx.ALL, 10)
 
     self.vlc_player = VLCPlayer(self.video_panel)
     self.video_panel.Bind(wx.EVT_SIZE, self.vlc_player.on_resize)
@@ -538,13 +581,22 @@ class TranscriptionPanel(wx.Panel):
 
       if ext in [".mp4", ".mkv", ".avi", ".mov", ".webm"]:
         self.file_path = path
-        self.on_video_selected(None)
-
       elif ext in [".srt", ".vtt", ".ass", ".sub"]:
         self.load_subtitle_file(path)
 
       else:
         wx.MessageBox("Unsupported file type.", "Error", wx.ICON_ERROR)
+
+  def on_open_settings_dialog(self, event=None):
+    dlg = TranscriptionSettingsDialog(self)
+    if dlg.ShowModal() == wx.ID_OK:
+      settings = dlg.get_settings()
+      self.settings_cache = settings
+
+      self.apply_settings(settings)
+      self.setup_shortcuts()
+
+    dlg.Destroy()
 
   def load_subtitle_file(self, path):
     try:
@@ -552,10 +604,11 @@ class TranscriptionPanel(wx.Panel):
         content = f.read()
 
       blocks = re.split(r"\n{2,}", content.strip())
+      self.segment_list_panel.reset()
       self.segment_list_panel.set_segments(blocks)
       self.output_box.SetValue(self.wrap_text(content))
       self.last_saved_text = content
-      self.readonly_chk.Enable()
+      self.saved_path = path
 
       if self.announce_enabled:
         self.announce("Subtitle loaded")
@@ -655,10 +708,15 @@ class TranscriptionPanel(wx.Panel):
       self.seek_slider.SetValue(0)
 
   def on_segments_changed(self):
+    if hasattr(self, "_updating_from_output") and self._updating_from_output:
+      return
+    self._updating_from_segments = True
+
     if hasattr(self, "segment_list_panel"):
       srt_text = self.segment_list_panel.get_srt()
       self.output_box.SetValue(self.wrap_text(srt_text))
-      self.last_saved_text = srt_text
+      self.output_modified = True
+      self._updating_from_segments = False
 
   def on_output_box_updated(self, event):
     if not hasattr(self, "segment_list_panel"):
@@ -667,15 +725,15 @@ class TranscriptionPanel(wx.Panel):
     if getattr(self, "_updating_from_segments", False):
       return
 
+    self._updating_from_output = True
+
     text = self.output_box.GetValue().strip()
     if not text:
       return
 
     lines = re.split(r"\n{2,}", text)
     self.segment_list_panel.set_segments(lines)
-
-  def on_video_selected(self, event):
-    self.readonly_chk.Enable()
+    self.output_modified = True
 
   def update_language_ui_visibility(self, event=None):
     task = self.task_radio.GetStringSelection()
@@ -789,6 +847,8 @@ class TranscriptionPanel(wx.Panel):
 
     task_mode = self.task_radio.GetStringSelection()
     task = "transcribe" if task_mode == "Transcription" else "translate"
+    target_lang_label = self.target_language_combo.GetValue()
+    target_lang_code = LANGUAGES.get(target_lang_label, "en")
     if self.announce_enabled:
       msg = "Transcription Started" if task == "transcribe" else "Translation Started"
       self.announce(msg)
@@ -797,13 +857,18 @@ class TranscriptionPanel(wx.Panel):
     if not self.auto_detect_chk.IsChecked():
       language_label = self.source_language_combo.GetValue()
       language_code = LANGUAGES.get(language_label, "en")
+    target_lang_code = LANGUAGES.get(self.target_language_combo.GetValue(), "en")
 
     self.output_box.SetValue("Running...")
+    if hasattr(self, "settings_cache"):
+      self.apply_settings(self.settings_cache)
     self.is_transcribing = True
     self.stop_event.clear()
     self.start_btn.SetLabel("&Stop")
 
     def run_transcription():
+      if self.enable_beep:
+        self.start_beep()
       try:
         model_size = self.model_combo.GetValue()
         model = WhisperModel(model_size, compute_type="int8", download_root=os.path.expanduser("~/.cache/huggingface"))
@@ -823,8 +888,11 @@ class TranscriptionPanel(wx.Panel):
               translator = Translator()
               translated_lines = []
               for idx, seg in enumerate(segments, start=1):
-                translated = translator.translate(seg.text.strip(), 
-        dest=LANGUAGES.get(self.target_language_combo.GetValue(), "en"))
+                try:
+                  translated = translator.translate(seg.text.strip(), dest=target_lang_code)
+                  translated_text = translated.text
+                except Exception as e:
+                  translated_text = f"[Translation failed: {e}]"
                 start = format_srt_time(seg.start)
                 end = format_srt_time(seg.end)
                 translated_lines.append(f"{idx}\n{start} --> {end}\n{translated.text}\n")
@@ -834,13 +902,32 @@ class TranscriptionPanel(wx.Panel):
               wx.CallAfter(self.segment_list_panel.set_segments, segments)
             wx.CallAfter(self.output_box.SetValue, srt_text)
             wx.CallAfter(lambda: setattr(self, "last_saved_text", srt_text))
-            wx.CallAfter(self.output_box.SetFocus)
+            if self.after_transcription_action == "Show message":
+              wx.CallAfter(wx.MessageBox, "Transcription complete.", "Done")
+            elif self.after_transcription_action == "Show tooltip":
+              wx.CallAfter(lambda: wx.adv.NotificationMessage(
+    title=f"{'Transcription' if task == 'transcribe' else 'Translation'} Complete",
+    message=f"{'Transcription' if task == 'transcribe' else 'Translation'} has finished successfully."
+  ).Show(timeout=wx.adv.NotificationMessage.Timeout_Auto))
+            elif self.after_transcription_action == "Focus output":
+              def focus_output():
+                self.output_box.SetFocus()
+                self.output_box.Refresh()
+                self.output_box.Update()
+
+              wx.CallAfter(focus_output)
+              wx.CallAfter(self.Raise)
+              wx.CallAfter(self.output_box.SetFocus)
+            elif self.after_transcription_action == "Do nothing":
+              pass
           except Exception as e:
             wx.CallAfter(wx.MessageBox, f"Translation failed: {e}", "Error", wx.ICON_ERROR)
 
       except Exception as e:
         wx.CallAfter(wx.MessageBox, f"Error during transcription: {e}", "Error", wx.ICON_ERROR)
       finally:
+        if self.enable_beep:
+          self.stop_beep()
         wx.CallAfter(self.reset_transcription_button)
 
     self.transcription_thread = threading.Thread(target=run_transcription)
@@ -852,6 +939,41 @@ class TranscriptionPanel(wx.Panel):
     self.start_btn.Enable()
     self.transcription_thread = None
     self.stop_event.clear()
+
+  def apply_settings(self, settings):
+    self.shift_jump = settings.get("shift_jump", self.shift_jump)
+    self.ctrl_jump = settings.get("ctrl_jump", self.ctrl_jump)
+    self.alt_jump = settings.get("alt_jump", self.alt_jump)
+    self.ctrl_shift_jump = settings.get("ctrl_shift_jump", self.ctrl_shift_jump)
+
+    self.video_width = settings.get("video_width", self.video_width)
+    self.video_height = settings.get("video_height", self.video_height)
+
+    self.readonly_mode = settings.get("readonly", self.readonly_mode)
+    self.enable_beep = settings.get("beep", self.enable_beep)
+
+    self.after_transcription_action = settings.get("after_action", self.after_transcription_action)
+
+    self.output_box.SetEditable(not self.readonly_mode)
+
+    if hasattr(self, "video_panel"):
+      self.video_panel.SetMinSize((self.video_width, self.video_height))
+      self.video_panel.SetSize((self.video_width, self.video_height))
+      self.video_panel.Layout()
+      self.Layout()
+
+  def start_beep(self):
+    def beep_loop():
+      while getattr(self, "_beep_active", False):
+        winsound.Beep(1000, 300)
+        time.sleep(0.5)
+    self._beep_active = True
+    self._beep_thread = threading.Thread(target=beep_loop)
+    self._beep_thread.daemon = True
+    self._beep_thread.start()
+
+  def stop_beep(self):
+    self._beep_active = False
 
   def save_result(self, event):
     with wx.FileDialog(self, "Save Output", wildcard="SubRip (*.srt)|*.srt|Text (*.txt)|*.txt",
@@ -865,6 +987,7 @@ class TranscriptionPanel(wx.Panel):
           f.write(content)
         self.saved_path = path
         self.last_saved_text = content
+        self.output_modified = False
       except Exception as e:
         wx.MessageBox(f"Failed to save file:\n{e}", "Error", wx.ICON_ERROR)
 
@@ -882,5 +1005,6 @@ class TranscriptionPanel(wx.Panel):
       with open(self.saved_path, "w", encoding="utf-8") as f:
         f.write(content)
       self.last_saved_text = content
+      self.output_modified = False
     except Exception as e:
       wx.MessageBox(f"Failed to save file:\n{e}", "Error", wx.ICON_ERROR)
