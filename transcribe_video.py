@@ -135,6 +135,12 @@ class VLCPlayer:
   def get_position(self):
     return self.player.get_position()
 
+  def set_position_by_time(self, seconds):
+    self.player.set_time(int(seconds * 1000))
+
+  def get_current_playback_seconds(self):
+    return self.player.get_time() / 1000
+
   def seek_relative(self, seconds):
     if self.player:
       current_pos = self.player.get_time()
@@ -165,6 +171,13 @@ class TranscriptionPanel(wx.Panel):
     tolk.try_sapi(True)
     tolk.load()
     self.announce_enabled = announce_enabled
+
+    self.segment_queue = []
+    self.segment_index = -1
+    self.segment_timer = None
+
+    self.segment_guard = None
+    self.current_segment_end = None
 
     main_sizer = wx.BoxSizer(wx.VERTICAL)
 
@@ -482,12 +495,31 @@ class TranscriptionPanel(wx.Panel):
     return video_sizer
 
   def announce(self, message):
+    if isinstance(message, dict):
+      action = message.get("action")
+      if action == "play_segments":
+        segments = message.get("segments", [])
+        self.play_given_segments(segments)
+        return
+
     if self.announce_enabled and message:
       tolk.output(message, interrupt=True)
 
   def cleanup(self):
     if hasattr(self, "cleaned") and self.cleaned:
       return
+    if getattr(self, "segment_timer", None):
+      try:
+        self.segment_timer.Stop()
+      except Exception:
+        pass
+    if getattr(self, "segment_guard", None):
+      try:
+        self.segment_guard.Stop()
+      except Exception:
+        pass
+    self.segment_queue = []
+    self.segment_index = -1
     if hasattr(self, "temp_subtitle_path") and os.path.exists(self.temp_subtitle_path):
       try:
         os.remove(self.temp_subtitle_path)
@@ -511,6 +543,11 @@ class TranscriptionPanel(wx.Panel):
       wx.CallLater(100, self.finalize_play_setup)
     else:
       self.vlc_player.stop()
+      if getattr(self, "segment_timer", None):
+        try:
+          self.segment_timer.Stop()
+        except Exception:
+          pass
       self.toggle_btn.SetLabel("Play")
       self.timer.Stop()
       self.seek_slider.SetValue(0)
@@ -529,6 +566,26 @@ class TranscriptionPanel(wx.Panel):
     self.vlc_player.pause()
     if self.announce_enabled:
       self.announce("Pause" if self.vlc_player.is_paused else "Resume")
+
+  def play_subtitles_from_text(self, srt_text, start_time=None, announce_message="Play with Subtitles"):
+    temp_ass_path = generate_ass_file(srt_text)
+    self.temp_subtitle_path = temp_ass_path
+
+    if hasattr(self, "file_path"):
+      self.vlc_player.set_media(self.file_path)
+      self.vlc_player.media.add_option(f":sub-file={temp_ass_path}")
+      if start_time:
+        h, m, s_ms = start_time.split(":")
+        s, ms = s_ms.split(",")
+        total_seconds = int(h) * 3600 + int(m) * 60 + int(s) + int(ms) / 1000
+        self.vlc_player.media.add_option(f":start-time={total_seconds}")
+      self.vlc_player.play()
+
+      self.finalize_play_setup()
+      if self.announce_enabled:
+        self.announce(announce_message)
+    else:
+      wx.MessageBox("Please select a video file first.", "Error")
 
   def on_play_with_subtitles(self, event=None):
     srt_text = self.output_box.GetValue().strip()
@@ -551,19 +608,105 @@ class TranscriptionPanel(wx.Panel):
         self.announce("Resume with Subtitles")
       return
 
-    temp_ass_path = generate_ass_file(srt_text)
-    self.temp_subtitle_path = temp_ass_path
+    self.play_subtitles_from_text(srt_text)
 
-    if hasattr(self, "file_path"):
-      self.vlc_player.set_media(self.file_path)
-      self.vlc_player.media.add_option(f":sub-file={temp_ass_path}")
-      self.vlc_player.play()
-      self.finalize_play_setup()
-      if self.announce_enabled:
-        self.announce("Play with Subtitles")
+  def play_given_segments(self, segments):
+    if not segments or not hasattr(self, "file_path"):
+      wx.MessageBox("No video or segment to play.", "Error")
+      return
+
+    if getattr(self, "segment_timer", None):
+      try:
+        self.segment_timer.Stop()
+      except Exception:
+        pass
+    if getattr(self, "segment_guard", None):
+      try:
+        self.segment_guard.Stop()
+      except Exception:
+        pass
+
+    def parse_ts(ts):
+      h, m, s_ms = ts.split(":")
+      s, ms = s_ms.split(",")
+      return int(h) * 3600 + int(m) * 60 + int(s) + int(ms) / 1000.0
+
+    temp_content = []
+    ranges = []
+    for i, (start, end, text) in enumerate(segments, 1):
+      temp_content.append(f"{i}\n{start} --> {end}\n{text.strip()}\n")
+      ranges.append((parse_ts(start), parse_ts(end)))
+    srt_text = "\n".join(temp_content)
+
+    self.segment_queue = ranges
+    self.segment_index = 0
+
+    self.play_subtitles_from_text(
+      srt_text,
+      start_time=segments[0][0],
+      announce_message="Playing selected segments"
+    )
+
+    start_sec, end_sec = self.segment_queue[self.segment_index]
+    self.current_segment_end = end_sec
+
+    self.segment_guard = wx.Timer(self)
+    self.Bind(wx.EVT_TIMER, self._on_segment_guard, self.segment_guard)
+    self.segment_guard.Start(50)
+
+  def stop_after_segment(self, event):
+    if getattr(self, "segment_timer", None):
+      try:
+        self.segment_timer.Stop()
+      except Exception:
+        pass
+    self.segment_queue = []
+    self.segment_index = -1
+    self.vlc_player.stop()
+    self.seek_slider.SetValue(0)
+    if self.announce_enabled:
+      self.announce("Segment finished")
+
+  def _start_segment(self, index):
+    self.segment_index = index
+    start_sec, end_sec = self.segment_queue[self.segment_index]
+    state = self.vlc_player.player.get_state()
+    if state in [vlc.State.NothingSpecial, vlc.State.Stopped, vlc.State.Ended]:
+      if hasattr(self, "file_path") and self.file_path:
+        self.vlc_player.set_media(self.file_path)
+        self.vlc_player.media.add_option(f":start-time={start_sec}")
+        self.vlc_player.play()
+        wx.CallLater(100, self.finalize_play_setup)
     else:
-      wx.MessageBox("Please select a video file first.", "Error")
- 
+      self.vlc_player.set_position_by_time(start_sec)
+      wx.CallLater(120, lambda: self.vlc_player.set_position_by_time(start_sec))
+    self.current_segment_end = end_sec
+
+  def _on_segment_guard(self, event):
+    now = self.vlc_player.get_current_playback_seconds()
+    if self.current_segment_end is None:
+      return
+    if now >= self.current_segment_end - 0.03:
+      self._advance_segment()
+
+  def _advance_segment(self):
+    next_index = self.segment_index + 1
+    if next_index >= len(self.segment_queue):
+      try:
+        if getattr(self, "segment_guard", None):
+          self.segment_guard.Stop()
+      except Exception:
+        pass
+      self.segment_queue = []
+      self.segment_index = -1
+      self.current_segment_end = None
+      self.vlc_player.stop()
+      self.seek_slider.SetValue(0)
+      if self.announce_enabled:
+        self.announce("Segment(s) finished")
+      return
+    self._start_segment(next_index)
+
   def on_open_video(self, event):
     wildcard = (
       "Video files (*.mp4;*.mkv;*.avi;*.mov;*.webm)|*.mp4;*.mkv;*.avi;*.mov;*.webm|"

@@ -88,6 +88,7 @@ class SegmentListPanel(wx.Panel):
     self.move_down_id = wx.NewIdRef()
     self.move_last_to_first_id = wx.NewIdRef()
     self.move_first_to_last_id = wx.NewIdRef()
+    self.play_segment_id = wx.NewIdRef()
     self.align_shortcuts = {
   (wx.ACCEL_SHIFT, ord('R')): ("Top Right", r"{\an9}"),
   (wx.ACCEL_CTRL, ord('R')): ("Middle Right", r"{\an6}"),
@@ -135,6 +136,9 @@ class SegmentListPanel(wx.Panel):
       wx.AcceleratorEntry(wx.ACCEL_ALT | wx.ACCEL_SHIFT, wx.WXK_HOME, self.move_last_to_first_id),
       wx.AcceleratorEntry(wx.ACCEL_ALT | wx.ACCEL_SHIFT, wx.WXK_END, self.move_first_to_last_id),
     ]
+
+    entries.append(wx.AcceleratorEntry(wx.ACCEL_ALT | wx.ACCEL_SHIFT, ord('P'), self.play_segment_id))
+    self.Bind(wx.EVT_MENU, lambda e: self.play_focused_segment(), id=self.play_segment_id)
 
     for (mod, key), (label, tag) in self.align_shortcuts.items():
       align_id = wx.NewIdRef()
@@ -214,6 +218,40 @@ class SegmentListPanel(wx.Panel):
     self.listbox.SetSelection(wx.NOT_FOUND)
     self.segments = []
 
+  def play_focused_segment(self):
+    if not self.announce_callback:
+      return
+
+    selections = self.listbox.GetSelections()
+    if selections:
+      indices = list(selections)
+    else:
+      focused = self.listbox.GetSelection()
+      indices = [focused] if focused != wx.NOT_FOUND else []
+
+    if not indices:
+      self.announce_callback("No segment selected.")
+      return
+
+    segments = []
+    for i in indices:
+      try:
+        text = self.listbox.GetString(i)
+        start_match = re.search(r"(\d{2}:\d{2}:\d{2},\d{3})\s*-->\s*(\d{2}:\d{2}:\d{2},\d{3})", text)
+        if start_match:
+          start_time = start_match.group(1)
+          end_time = start_match.group(2)
+          content = text.splitlines()[2:]
+          segments.append((start_time, end_time, "\n".join(content)))
+      except Exception:
+        continue
+
+    if segments:
+      self.announce_callback({
+        "action": "play_segments",
+        "segments": segments
+      })
+
   def set_segments(self, lines):
     self.listbox.Clear()
     for line in lines:
@@ -273,6 +311,9 @@ class SegmentListPanel(wx.Panel):
     self.Bind(wx.EVT_MENU, lambda e: self.edit_segment(index), edit_item)
 
     menu.AppendSeparator()
+
+    play_item = menu.Append(self.play_segment_id, "Play Focused Segment\tAlt+Shift+P")
+    self.Bind(wx.EVT_MENU, lambda e: self.play_focused_segment(), play_item)
 
     undo_item = menu.Append(wx.ID_ANY, "Undo\tCtrl+Z")
     redo_item = menu.Append(wx.ID_ANY, "Redo\tCtrl+Y")
