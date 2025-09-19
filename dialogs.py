@@ -280,3 +280,108 @@ class GoToDialog(wx.Dialog):
       "range_end": int(range_end) if range_end.isdigit() else None,
       "exclusions": exclusion_list
     }
+
+class LimitedNumericCtrl(wx.TextCtrl):
+  def __init__(self, parent, max_len, value="0"):
+    super().__init__(parent, value=str(value), style=wx.TE_PROCESS_ENTER)
+    self.max_len = max_len
+    self.Bind(wx.EVT_CHAR, self.on_char)
+    self.Bind(wx.EVT_TEXT, self.on_text)
+
+  def on_char(self, event):
+    key = event.GetKeyCode()
+    allowed_nav = [wx.WXK_BACK, wx.WXK_DELETE, wx.WXK_LEFT, wx.WXK_RIGHT, wx.WXK_HOME, wx.WXK_END, wx.WXK_TAB]
+    if key in allowed_nav:
+      event.Skip()
+      return
+    if key in (wx.WXK_RETURN, wx.WXK_NUMPAD_ENTER):
+      event.Skip()
+      return
+    if 48 <= key <= 57 or wx.WXK_NUMPAD0 <= key <= wx.WXK_NUMPAD9:
+      val = self.GetValue()
+      if len(val) >= self.max_len and self.GetSelection() == (-1, -1):
+        return
+      event.Skip()
+      return
+    return
+
+  def on_text(self, event):
+    val = self.GetValue()
+    if not val.isdigit() and val != "":
+      digits_only = "".join(ch for ch in val if ch.isdigit())
+      self.ChangeValue(digits_only[: self.max_len])
+      self.SetInsertionPointEnd()
+    elif len(val) > self.max_len:
+      self.ChangeValue(val[: self.max_len])
+      self.SetInsertionPointEnd()
+    else:
+      event.Skip()
+
+  def get_int(self):
+    v = self.GetValue().strip()
+    if v == "":
+      return 0
+    try:
+      return int(v)
+    except:
+      return 0
+
+
+class JumpToDialog(wx.Dialog):
+  def __init__(self, parent, initial_ms=0):
+    super().__init__(parent, title="Jump To Time", size=(360, 220))
+    try:
+      base_ms = int(initial_ms)
+    except:
+      base_ms = 0
+    if base_ms < 0:
+      base_ms = 0
+    h = base_ms // 3600000
+    rem = base_ms % 3600000
+    m = rem // 60000
+    rem2 = rem % 60000
+    s = rem2 // 1000
+    ms = rem2 % 1000
+
+    main = wx.BoxSizer(wx.VERTICAL)
+    grid = wx.FlexGridSizer(rows=2, cols=4, vgap=8, hgap=10)
+
+    self.hours  = LimitedNumericCtrl(self, max_len=2, value=h)
+    self.minutes= LimitedNumericCtrl(self, max_len=2, value=m)
+    self.seconds= LimitedNumericCtrl(self, max_len=2, value=s)
+    self.millis = LimitedNumericCtrl(self, max_len=3, value=ms)
+
+    grid.AddMany([
+      (wx.StaticText(self, label="&Hours"), 0, wx.ALIGN_CENTER_VERTICAL),
+      (wx.StaticText(self, label="&Minutes"), 0, wx.ALIGN_CENTER_VERTICAL),
+      (wx.StaticText(self, label="&Seconds"), 0, wx.ALIGN_CENTER_VERTICAL),
+      (wx.StaticText(self, label="Mi&lliseconds"), 0, wx.ALIGN_CENTER_VERTICAL),
+      (self.hours, 1, wx.EXPAND),
+      (self.minutes, 1, wx.EXPAND),
+      (self.seconds, 1, wx.EXPAND),
+      (self.millis, 1, wx.EXPAND),
+    ])
+    grid.AddGrowableCol(0, 1)
+    grid.AddGrowableCol(1, 1)
+    grid.AddGrowableCol(2, 1)
+    grid.AddGrowableCol(3, 1)
+    main.Add(grid, 1, wx.ALL | wx.EXPAND, 12)
+
+    btns = self.CreateSeparatedButtonSizer(wx.OK | wx.CANCEL)
+    if btns:
+      main.Add(btns, 0, wx.ALL | wx.EXPAND, 10)
+
+    self.SetSizer(main)
+    self.Layout()
+    wx.CallAfter(self.hours.SetFocus)
+    wx.CallAfter(self.hours.SelectAll)
+
+  def get_time_ms(self):
+    h  = max(0, self.hours.get_int())
+    m  = max(0, self.minutes.get_int())
+    s  = max(0, self.seconds.get_int())
+    ms = max(0, self.millis.get_int())
+    if m > 59: m = 59
+    if s > 59: s = 59
+    if ms > 999: ms = 999
+    return ((h * 3600 + m * 60 + s) * 1000) + ms

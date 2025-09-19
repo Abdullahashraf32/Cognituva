@@ -29,7 +29,7 @@ import wx
 import wx.adv
 import vlc
 from segment_list import SegmentListPanel
-from dialogs import FilterDialog, GoToDialog
+from dialogs import FilterDialog, GoToDialog, JumpToDialog
 from ass_writer import generate_ass_file
 
 MODEL_WARNINGS = {
@@ -140,6 +140,24 @@ class VLCPlayer:
 
   def get_current_playback_seconds(self):
     return self.player.get_time() / 1000
+
+  def get_duration_ms(self):
+    if self.media is not None:
+      try:
+        self.media.parse_with_options(vlc.MediaParseFlag.local, 2000)
+      except Exception:
+        try:
+          self.media.parse()
+        except Exception:
+          pass
+      try:
+        d = self.media.get_duration()
+        if d and d > 0:
+          return d
+      except Exception:
+        pass
+    return self.player.get_length()
+
 
   def seek_relative(self, seconds):
     if self.player:
@@ -269,6 +287,11 @@ class TranscriptionPanel(wx.Panel):
     self.go_to_btn.Bind(wx.EVT_BUTTON, self.on_open_go_to_dialog)
     self.add_hover_effect(self.go_to_btn, wx.Colour(0, 204, 204))
     main_sizer.Add(self.go_to_btn, 0, wx.ALL | wx.ALIGN_CENTER, 5)
+
+    self.jump_to_btn = wx.Button(self, label="&Jump To")
+    self.jump_to_btn.Bind(wx.EVT_BUTTON, self.on_open_jump_to_dialog)
+    self.add_hover_effect(self.jump_to_btn, wx.Colour(0, 128, 160))
+    main_sizer.Add(self.jump_to_btn, 0, wx.ALL | wx.ALIGN_CENTER, 5)
 
     output_box_sizer = wx.StaticBoxSizer(wx.VERTICAL, self, "Transcript Output")
 
@@ -404,6 +427,7 @@ class TranscriptionPanel(wx.Panel):
     {"key": (wx.ACCEL_CTRL, wx.WXK_F4), "handler": lambda evt: self.confirm_exit(None)},
     {"key": (wx.ACCEL_CTRL, ord("D")), "handler": self.on_open_filter_dialog},
     {"key": (wx.ACCEL_CTRL, ord("G")), "handler": self.on_open_go_to_dialog},
+    {"key": (wx.ACCEL_CTRL, ord("J")), "handler": self.on_open_jump_to_dialog},
     ]
 
     accel_entries = []
@@ -787,6 +811,35 @@ class TranscriptionPanel(wx.Panel):
           target_segment=segment
         )
 
+    dlg.Destroy()
+
+  def on_open_jump_to_dialog(self, event=None):
+    if not hasattr(self, "file_path"):
+      wx.MessageBox("Please select a video file first.", "Error")
+      return
+    if getattr(self.vlc_player, "media", None) is None:
+      self.vlc_player.set_media(self.file_path)
+    try:
+      current_ms = int(self.vlc_player.get_current_playback_seconds() * 1000)
+    except:
+      current_ms = 0
+    if current_ms < 0:
+      current_ms = 0
+    dlg = JumpToDialog(self, initial_ms=current_ms)
+    if dlg.ShowModal() == wx.ID_OK:
+      t_ms = dlg.get_time_ms()
+      duration_ms = self.vlc_player.get_duration_ms()
+      if duration_ms > 0 and t_ms > duration_ms:
+        wx.MessageBox("Entered time exceeds video duration.", "Error", wx.ICON_ERROR)
+      else:
+        if getattr(self.vlc_player, "media", None) is None:
+          self.vlc_player.set_media(self.file_path)
+        state = self.vlc_player.player.get_state()
+        if state not in (vlc.State.Playing, vlc.State.Paused):
+          self.vlc_player.play()
+          wx.CallLater(120, lambda: self.vlc_player.set_position_by_time(t_ms / 1000.0))
+        else:
+          self.vlc_player.set_position_by_time(t_ms / 1000.0)
     dlg.Destroy()
 
   def on_speed_change(self, event):
