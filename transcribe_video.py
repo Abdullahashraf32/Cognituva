@@ -197,6 +197,8 @@ class TranscriptionPanel(wx.Panel):
     self.segment_guard = None
     self.current_segment_end = None
 
+    self._cached_total_ms = 0
+
     main_sizer = wx.BoxSizer(wx.VERTICAL)
 
     self.task_radio = wx.RadioBox(
@@ -428,6 +430,10 @@ class TranscriptionPanel(wx.Panel):
     {"key": (wx.ACCEL_CTRL, ord("D")), "handler": self.on_open_filter_dialog},
     {"key": (wx.ACCEL_CTRL, ord("G")), "handler": self.on_open_go_to_dialog},
     {"key": (wx.ACCEL_CTRL, ord("J")), "handler": self.on_open_jump_to_dialog},
+    {"key": (wx.ACCEL_CTRL | wx.ACCEL_SHIFT, ord("E")), "handler": self.on_announce_elapsed},
+    {"key": (wx.ACCEL_CTRL | wx.ACCEL_SHIFT, ord("R")), "handler": self.on_announce_remaining},
+    {"key": (wx.ACCEL_CTRL | wx.ACCEL_SHIFT, ord("T")), "handler": self.on_announce_total},
+    {"key": (wx.ACCEL_CTRL | wx.ACCEL_SHIFT, ord("C")), "handler": self.on_announce_current},
     ]
 
     accel_entries = []
@@ -528,6 +534,14 @@ class TranscriptionPanel(wx.Panel):
 
     if self.announce_enabled and message:
       tolk.output(message, interrupt=True)
+
+  def _warm_media_duration(self):
+    try:
+      d = self.vlc_player.get_duration_ms()
+      if d and d > 0:
+        self._cached_total_ms = d
+    except:
+      pass
 
   def cleanup(self):
     if hasattr(self, "cleaned") and self.cleaned:
@@ -748,6 +762,8 @@ class TranscriptionPanel(wx.Panel):
 
       if ext in [".mp4", ".mkv", ".avi", ".mov", ".webm"]:
         self.file_path = path
+        self.vlc_player.set_media(self.file_path)
+        wx.CallLater(10, self._warm_media_duration)
       elif ext in [".srt", ".vtt", ".ass", ".sub"]:
         self.load_subtitle_file(path)
 
@@ -913,6 +929,70 @@ class TranscriptionPanel(wx.Panel):
       self.output_box.SetValue(self.wrap_text(srt_text))
       self.output_modified = True
       self._updating_from_segments = False
+
+  def _format_ms(self, ms):
+    if ms is None or ms < 0:
+      ms = 0
+    h = ms // 3600000
+    r = ms % 3600000
+    m = r // 60000
+    r2 = r % 60000
+    s = r2 // 1000
+    ms2 = r2 % 1000
+    return h, m, s, ms2
+
+  def _no_video_feedback(self):
+    if self.announce_enabled:
+      self.announce("No video is open")
+
+  def on_announce_elapsed(self, event=None):
+    if not hasattr(self, "file_path"):
+      self._no_video_feedback()
+      return
+    cur_ms = int(max(0, self.vlc_player.get_current_playback_seconds() * 1000))
+    h, m, s, _ = self._format_ms(cur_ms)
+    self.announce(f"Elapsed {h} hours {m} minutes {s} seconds") if self.announce_enabled else None
+
+  def on_announce_remaining(self, event=None):
+    if not hasattr(self, "file_path"):
+      self._no_video_feedback()
+      return
+    dur = self.vlc_player.get_duration_ms()
+    cur_ms = int(max(0, self.vlc_player.get_current_playback_seconds() * 1000))
+    if dur and dur > 0:
+      rem = max(0, int(dur - cur_ms))
+      h, m, s, _ = self._format_ms(rem)
+      msg = f"Remaining {h} hours {m} minutes {s} seconds"
+    else:
+      msg = "Duration unknown"
+    self.announce(msg) if self.announce_enabled else None
+
+  def on_announce_total(self, event=None):
+    if not hasattr(self, "file_path"):
+      self._no_video_feedback()
+      return
+
+    if getattr(self.vlc_player, "media", None) is None:
+      self.vlc_player.set_media(self.file_path)
+
+    dur_ms = self._cached_total_ms or self.vlc_player.get_duration_ms()
+    if dur_ms and dur_ms > 0:
+      self._cached_total_ms = dur_ms
+      msg = f"Total time {format_srt_time(dur_ms / 1000.0)}"
+      if self.announce_enabled:
+        self.announce(msg)
+    else:
+      if self.announce_enabled:
+        self.announce("Loading duration, please try again")
+      wx.CallLater(50, self._warm_media_duration)
+
+  def on_announce_current(self, event=None):
+    if not hasattr(self, "file_path"):
+      self._no_video_feedback()
+      return
+    cur_ms = int(max(0, self.vlc_player.get_current_playback_seconds() * 1000))
+    h, m, s, ms2 = self._format_ms(cur_ms)
+    self.announce(f"Current time {h} hours {m} minutes {s} seconds {ms2} milliseconds") if self.announce_enabled else None
 
   def on_output_box_updated(self, event):
     if not hasattr(self, "segment_list_panel"):
