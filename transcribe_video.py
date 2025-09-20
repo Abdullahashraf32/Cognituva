@@ -434,6 +434,12 @@ class TranscriptionPanel(wx.Panel):
     {"key": (wx.ACCEL_CTRL | wx.ACCEL_SHIFT, ord("R")), "handler": self.on_announce_remaining},
     {"key": (wx.ACCEL_CTRL | wx.ACCEL_SHIFT, ord("T")), "handler": self.on_announce_total},
     {"key": (wx.ACCEL_CTRL | wx.ACCEL_SHIFT, ord("C")), "handler": self.on_announce_current},
+    {"key": (wx.ACCEL_CTRL, ord("R")), "handler": self.on_toggle_readonly},
+    {"key": (wx.ACCEL_CTRL, wx.WXK_NUMPAD4), "handler": self.on_shrink_width},
+    {"key": (wx.ACCEL_CTRL, wx.WXK_NUMPAD6), "handler": self.on_expand_width},
+    {"key": (wx.ACCEL_CTRL, wx.WXK_NUMPAD8), "handler": self.on_expand_height},
+    {"key": (wx.ACCEL_CTRL, wx.WXK_NUMPAD2), "handler": self.on_shrink_height},
+    {"key": (wx.ACCEL_CTRL, ord("B")), "handler": self.on_toggle_beep},
     ]
 
     accel_entries = []
@@ -930,6 +936,71 @@ class TranscriptionPanel(wx.Panel):
       self.output_modified = True
       self._updating_from_segments = False
 
+  def on_toggle_readonly(self, event=None):
+    self.readonly_mode = not self.readonly_mode
+    self.output_box.SetEditable(not self.readonly_mode)
+    try:
+      s = getattr(self, "settings_cache", {}) or {}
+      s["readonly"] = self.readonly_mode
+      self.settings_cache = s
+      save_settings(s)
+    except:
+      pass
+    if self.announce_enabled:
+      self.announce("Readonly enabled" if self.readonly_mode else "Readonly disabled")
+
+  def on_toggle_beep(self, event=None):
+    self.enable_beep = not self.enable_beep
+    try:
+      s = getattr(self, "settings_cache", {}) or {}
+      s["beep"] = self.enable_beep
+      self.settings_cache = s
+      save_settings(s)
+    except:
+      pass
+    if self.announce_enabled:
+      self.announce("Beep enabled" if self.enable_beep else "Beep disabled")
+
+  def _persist_video_size(self):
+    try:
+      s = getattr(self, "settings_cache", {}) or {}
+      s["video_width"] = self.video_width
+      s["video_height"] = self.video_height
+      self.settings_cache = s
+      save_settings(s)
+    except:
+      pass
+
+  def _resize_video(self, dw=0, dh=0, announce_label=""):
+    min_w, min_h = 160, 120
+    step = getattr(self, "resize_step", 40)
+    self.video_width = max(min_w, int(self.video_width + (dw or 0)))
+    self.video_height = max(min_h, int(self.video_height + (dh or 0)))
+    if hasattr(self, "video_panel"):
+      self.video_panel.SetMinSize((self.video_width, self.video_height))
+      self.video_panel.SetSize((self.video_width, self.video_height))
+      self.video_panel.Layout()
+      self.Layout()
+    self._persist_video_size()
+    if self.announce_enabled and announce_label:
+      self.announce(f"{announce_label} {self.video_width} by {self.video_height}")
+
+  def on_shrink_width(self, event=None):
+    step = getattr(self, "resize_step", 40)
+    self._resize_video(dw=-step, dh=0, announce_label="Video size")
+
+  def on_expand_width(self, event=None):
+    step = getattr(self, "resize_step", 40)
+    self._resize_video(dw=step, dh=0, announce_label="Video size")
+
+  def on_expand_height(self, event=None):
+    step = getattr(self, "resize_step", 40)
+    self._resize_video(dw=0, dh=step, announce_label="Video size")
+
+  def on_shrink_height(self, event=None):
+    step = getattr(self, "resize_step", 40)
+    self._resize_video(dw=0, dh=-step, announce_label="Video size")
+
   def _format_ms(self, ms):
     if ms is None or ms < 0:
       ms = 0
@@ -1227,11 +1298,11 @@ class TranscriptionPanel(wx.Panel):
 
     self.readonly_mode = settings.get("readonly", self.readonly_mode)
     self.enable_beep = settings.get("beep", self.enable_beep)
-
     self.after_transcription_action = settings.get("after_action", self.after_transcription_action)
 
-    self.output_box.SetEditable(not self.readonly_mode)
+    self.resize_step = int(settings.get("resize_step", 40))
 
+    self.output_box.SetEditable(not self.readonly_mode)
     if hasattr(self, "video_panel"):
       self.video_panel.SetMinSize((self.video_width, self.video_height))
       self.video_panel.SetSize((self.video_width, self.video_height))

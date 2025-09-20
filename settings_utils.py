@@ -87,6 +87,13 @@ class TranscriptionSettingsDialog(wx.Dialog):
     size_sizer.Add(self.video_height, 1)
     main_sizer.Add(size_sizer, 0, wx.EXPAND | wx.ALL, 6)
 
+    step_sizer = wx.BoxSizer(wx.HORIZONTAL)
+    self.resize_step = wx.SpinCtrl(self, min=5, max=400)
+    self.resize_step.SetValue(int(self.settings.get("resize_step", 40)))
+    step_sizer.Add(wx.StaticText(self, label="Resize step (px):"), 0, wx.ALIGN_CENTER_VERTICAL | wx.RIGHT, 5)
+    step_sizer.Add(self.resize_step, 1)
+    main_sizer.Add(step_sizer, 0, wx.EXPAND | wx.ALL, 6)
+
     self.readonly_checkbox = wx.CheckBox(self, label="Enable Readonly Mode on Start")
     self.readonly_checkbox.SetValue(self.settings.get("readonly", True))
     main_sizer.Add(self.readonly_checkbox, 0, wx.ALL, 10)
@@ -138,6 +145,7 @@ class TranscriptionSettingsDialog(wx.Dialog):
 
     self.settings["video_width"] = self.video_width.GetValue()
     self.settings["video_height"] = self.video_height.GetValue()
+    self.settings["resize_step"] = self.resize_step.GetValue()
     self.settings["readonly"] = self.readonly_checkbox.GetValue()
     self.settings["beep"] = self.beep_checkbox.GetValue()
     self.settings["after_action"] = self.action_choice.GetStringSelection()
