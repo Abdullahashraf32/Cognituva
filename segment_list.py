@@ -10,6 +10,7 @@ if wx_lib_path not in sys.path:
   sys.path.insert(0, wx_lib_path)
 
 import wx
+import vlc
 from settings_utils import format_srt_time, format_segments_to_srt
 from dialogs import FilterDialog, GoToDialog
 
@@ -101,6 +102,10 @@ class SegmentListPanel(wx.Panel):
   (wx.ACCEL_ALT, ord('L')): ("Bottom Left", r"{\an1}"),
 }
 
+    self.selection_start_ms = None
+    self.selection_end_ms = None
+    self.last_inserted_index = None
+
     sizer = wx.BoxSizer(wx.VERTICAL)
     self.listbox = wx.ListBox(self, style=wx.LB_EXTENDED)
     self.listbox.Bind(wx.EVT_SET_FOCUS, self.on_listbox_focus)
@@ -118,6 +123,13 @@ class SegmentListPanel(wx.Panel):
     underline_id = wx.NewIdRef()
     undo_id = wx.NewIdRef()
     redo_id = wx.NewIdRef()
+
+    self.sel_start_id = wx.NewIdRef()
+    self.sel_end_id = wx.NewIdRef()
+    self.nudge_start_id = wx.NewIdRef()
+    self.nudge_end_id = wx.NewIdRef()
+    self.play_selected_id = wx.NewIdRef()
+    self.insert_selection_id = wx.NewIdRef()
 
     entries = [
       wx.AcceleratorEntry(wx.ACCEL_CTRL, ord('B'), bold_id),
@@ -138,7 +150,16 @@ class SegmentListPanel(wx.Panel):
     ]
 
     entries.append(wx.AcceleratorEntry(wx.ACCEL_ALT | wx.ACCEL_SHIFT, ord('P'), self.play_segment_id))
+    entries.append(wx.AcceleratorEntry(wx.ACCEL_NORMAL, wx.WXK_INSERT, self.insert_selection_id))
     self.Bind(wx.EVT_MENU, lambda e: self.play_focused_segment(), id=self.play_segment_id)
+
+    entries += [
+      wx.AcceleratorEntry(wx.ACCEL_NORMAL, wx.WXK_F5, self.sel_start_id),
+      wx.AcceleratorEntry(wx.ACCEL_NORMAL, wx.WXK_F6, self.sel_end_id),
+      wx.AcceleratorEntry(wx.ACCEL_SHIFT, wx.WXK_F5, self.nudge_start_id),
+      wx.AcceleratorEntry(wx.ACCEL_SHIFT, wx.WXK_F6, self.nudge_end_id),
+      wx.AcceleratorEntry(wx.ACCEL_NORMAL, wx.WXK_F7, self.play_selected_id),
+    ]
 
     for (mod, key), (label, tag) in self.align_shortcuts.items():
       align_id = wx.NewIdRef()
@@ -146,7 +167,10 @@ class SegmentListPanel(wx.Panel):
       self.Bind(wx.EVT_MENU, handler, id=align_id)
       entries.append(wx.AcceleratorEntry(mod, key, align_id))
 
-    self.SetAcceleratorTable(wx.AcceleratorTable(entries))
+    tbl = wx.AcceleratorTable(entries)
+    self.SetAcceleratorTable(tbl)
+    if hasattr(self, "listbox") and self.listbox:
+      self.listbox.SetAcceleratorTable(tbl)
 
     self.Bind(wx.EVT_MENU, lambda e: self.toggle_style("bold"), id=bold_id)
     self.Bind(wx.EVT_MENU, lambda e: self.toggle_style("italic"), id=italic_id)
@@ -162,7 +186,39 @@ class SegmentListPanel(wx.Panel):
     self.Bind(wx.EVT_MENU, self.move_segment_down, id=self.move_down_id)
     self.Bind(wx.EVT_MENU, self.move_last_to_first, id=self.move_last_to_first_id)
     self.Bind(wx.EVT_MENU, self.move_first_to_last, id=self.move_first_to_last_id)
+
+    self.Bind(wx.EVT_MENU, lambda e: self.set_selection_start(), id=self.sel_start_id)
+    self.Bind(wx.EVT_MENU, lambda e: self.set_selection_end(), id=self.sel_end_id)
+    self.Bind(wx.EVT_MENU, lambda e: self.nudge_selection_start(), id=self.nudge_start_id)
+    self.Bind(wx.EVT_MENU, lambda e: self.nudge_selection_end(), id=self.nudge_end_id)
+    self.Bind(wx.EVT_MENU, lambda e: self.play_selected_part(), id=self.play_selected_id)
+    self.Bind(wx.EVT_MENU, lambda e: self.insert_selection(), id=self.insert_selection_id)
    
+  def install_global_shortcuts(self, target):
+    entries = [
+      (wx.ACCEL_NORMAL, wx.WXK_F5, wx.NewIdRef()),
+      (wx.ACCEL_NORMAL, wx.WXK_F6, wx.NewIdRef()),
+      (wx.ACCEL_SHIFT, wx.WXK_F5, wx.NewIdRef()),
+      (wx.ACCEL_SHIFT, wx.WXK_F6, wx.NewIdRef()),
+      (wx.ACCEL_NORMAL, wx.WXK_F7, wx.NewIdRef()),
+    ]
+    for mod, key, _id in entries:
+      target.Bind(wx.EVT_MENU, lambda e, m=mod, k=key: self._handle_global_shortcut(m, k), id=_id)
+    table = wx.AcceleratorTable([(mod, key, _id) for mod, key, _id in entries])
+    target.SetAcceleratorTable(table)
+
+  def _handle_global_shortcut(self, mod, key):
+    if key == wx.WXK_F5 and mod == wx.ACCEL_NORMAL:
+      self.set_selection_start(); return
+    if key == wx.WXK_F6 and mod == wx.ACCEL_NORMAL:
+      self.set_selection_end(); return
+    if key == wx.WXK_F5 and mod == wx.ACCEL_SHIFT:
+      self.nudge_selection_start(); return
+    if key == wx.WXK_F6 and mod == wx.ACCEL_SHIFT:
+      self.nudge_selection_end(); return
+    if key == wx.WXK_F7:
+      self.play_selected_part(); return
+
   def on_listbox_focus(self, event):
     if self.last_selected_indices:
       listbox_count = self.listbox.GetCount()
@@ -270,6 +326,134 @@ class SegmentListPanel(wx.Panel):
     self.set_segments(lines)
     if not self.current_filters:
         self.original_segments = list(lines)
+
+  def _parent(self):
+    return self.GetParent()
+
+  def _now_ms(self):
+    p = self._parent()
+    try:
+      return max(0, int(p.vlc_player.player.get_time()))
+    except:
+      return 0
+
+  def _nudge_ms(self):
+    p = self._parent()
+    try:
+      return int(p.settings_cache.get("selection_nudge_ms", 200))
+    except:
+      return 200
+
+  def _fmt_ms(self, ms):
+    s = ms/1000.0
+    return format_srt_time(s)
+
+  def _append_segment_to_output(self, start_ms, end_ms):
+    start = self._fmt_ms(start_ms)
+    end = self._fmt_ms(end_ms)
+    box = self.output_box
+    text = box.GetValue().strip()
+    if text:
+      blocks = re.split(r"\n{2,}", text)
+      next_idx = len(blocks) + 1
+      new_block = f"{next_idx}\n{start} --> {end}\n"
+      new_text = text + "\n\n" + new_block
+    else:
+      new_block = f"1\n{start} --> {end}\n"
+      new_text = new_block
+    box.SetValue(new_text)
+    box.SetInsertionPointEnd()
+    self.set_segments(re.split(r"\n{2,}", new_text))
+    if self.announce_callback:
+      self.announce_callback(f"selection inserted {start} to {end}")
+
+  def set_selection_start(self):
+    self.selection_start_ms = self._now_ms()
+    if not self._is_playing():
+      if self.announce_callback:
+        self.announce_callback("video not playing")
+      return
+    self.selection_start_ms = self._now_ms()
+    if self.announce_callback:
+      self.announce_callback(f"selection start {self._fmt_ms(self.selection_start_ms)}")
+
+  def set_selection_end(self):
+    if not self._is_playing():
+      if self.announce_callback:
+        self.announce_callback("video not playing")
+      return
+    if self.selection_start_ms is None:
+      if self.announce_callback:
+        self.announce_callback("no start")
+      return
+    end_ms = self._now_ms()
+    if end_ms <= self.selection_start_ms:
+      end_ms = self.selection_start_ms + 1
+    self.selection_end_ms = end_ms
+    if self.announce_callback:
+      self.announce_callback(f"selection end {self._fmt_ms(self.selection_end_ms)}")
+
+  def nudge_selection_start(self):
+    if self.selection_start_ms is None:
+      return
+    amount = self._nudge_ms()
+    self.selection_start_ms = max(0, self.selection_start_ms - amount)
+    if self.last_inserted_index is not None and 0 <= self.last_inserted_index < self.listbox.GetCount() and self.selection_end_ms is not None:
+      start_str = self._fmt_ms(self.selection_start_ms)
+      end_str = self._fmt_ms(self.selection_end_ms)
+      lines = self.listbox.GetString(self.last_inserted_index).split("\n")
+      if len(lines) >= 2:
+        number = lines[0]
+        text_lines = lines[2:]
+        self.listbox.SetString(self.last_inserted_index, "\n".join([number, f"{start_str} --> {end_str}"] + text_lines))
+        self.sync_output_box()
+    if self.announce_callback:
+      self.announce_callback(f"nudge start {amount} ms")
+
+  def nudge_selection_end(self):
+    if self.selection_end_ms is None:
+      return
+    amount = self._nudge_ms()
+    self.selection_end_ms = max(0, self.selection_end_ms - amount)
+    if self.last_inserted_index is not None and 0 <= self.last_inserted_index < self.listbox.GetCount() and self.selection_start_ms is not None:
+      start_str = self._fmt_ms(self.selection_start_ms)
+      end_str = self._fmt_ms(self.selection_end_ms)
+      lines = self.listbox.GetString(self.last_inserted_index).split("\n")
+      if len(lines) >= 2:
+        number = lines[0]
+        text_lines = lines[2:]
+        self.listbox.SetString(self.last_inserted_index, "\n".join([number, f"{start_str} --> {end_str}"] + text_lines))
+        self.sync_output_box()
+    if self.announce_callback:
+      self.announce_callback(f"nudge end {amount} ms")
+
+  def insert_selection(self):
+    if self.selection_start_ms is None or self.selection_end_ms is None:
+      if self.announce_callback:
+        self.announce_callback("no selection")
+      return
+    self._append_segment_to_output(self.selection_start_ms, self.selection_end_ms)
+    self.last_inserted_index = self.listbox.GetCount() - 1
+    self.output_box.SetFocus()
+
+  def _is_playing(self):
+    try:
+      s = self._parent().vlc_player.player.get_state()
+      return s in (vlc.State.Playing, vlc.State.Paused)
+    except:
+      return False
+
+  def play_selected_part(self):
+    if self.selection_start_ms is None or self.selection_end_ms is None:
+      if self.announce_callback:
+        self.announce_callback("no selection")
+      return
+    if self.announce_callback:
+      self.announce_callback({
+        "action": "play_range",
+        "start_ms": self.selection_start_ms,
+        "end_ms": self.selection_end_ms
+      })
 
   def renumber_and_set_segments(self, lines):
     updated_lines = []
@@ -390,6 +574,22 @@ class SegmentListPanel(wx.Panel):
     self.Bind(wx.EVT_MENU, self.move_first_to_last, move_first_to_last_item)
 
     menu.AppendSubMenu(move_menu, "Move Segments")
+
+    sel_menu = wx.Menu()
+    id_s = wx.NewIdRef(); id_e = wx.NewIdRef(); id_ns = wx.NewIdRef(); id_ne = wx.NewIdRef(); id_play = wx.NewIdRef()
+    sel_menu.Append(id_s, "Set &Start\tF5")
+    sel_menu.Append(id_e, "Set &End\tF6")
+    sel_menu.Append(id_ns, "&Nudge Start\tShift+F5")
+    sel_menu.Append(id_ne, "Nudge &End\tShift+F6")
+    sel_menu.AppendSeparator()
+    sel_menu.Append(id_play, "&Play selected part\tF7")
+    menu.AppendSubMenu(sel_menu, "Selection")
+    self.Bind(wx.EVT_MENU, lambda e: self.set_selection_start(), id=id_s.GetId())
+    self.Bind(wx.EVT_MENU, lambda e: self.set_selection_end(), id=id_e.GetId())
+    self.Bind(wx.EVT_MENU, lambda e: self.nudge_selection_start(), id=id_ns.GetId())
+    self.Bind(wx.EVT_MENU, lambda e: self.nudge_selection_end(), id=id_ne.GetId())
+    self.Bind(wx.EVT_MENU, lambda e: self.play_selected_part(), id=id_play.GetId())
+
     self.PopupMenu(menu)
     menu.Destroy()
 

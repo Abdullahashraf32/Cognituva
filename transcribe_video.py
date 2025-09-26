@@ -303,8 +303,11 @@ class TranscriptionPanel(wx.Panel):
     self.segment_list_panel = SegmentListPanel(
   self,
   self.output_box,
-  announce_callback=self.announce
+  announce_callback=self.announce,
+  on_update=self.on_segments_changed
 )
+
+    self.segment_list_panel.install_global_shortcuts(self.GetTopLevelParent())
 
     output_box_sizer.Add(self.segment_list_panel, 1, wx.ALL | wx.EXPAND, 5)
     output_box_sizer.Add(self.output_box, 1, wx.ALL | wx.EXPAND, 5)
@@ -440,6 +443,7 @@ class TranscriptionPanel(wx.Panel):
     {"key": (wx.ACCEL_CTRL, wx.WXK_NUMPAD8), "handler": self.on_expand_height},
     {"key": (wx.ACCEL_CTRL, wx.WXK_NUMPAD2), "handler": self.on_shrink_height},
     {"key": (wx.ACCEL_CTRL, ord("B")), "handler": self.on_toggle_beep},
+    {"key": (wx.ACCEL_NORMAL, wx.WXK_INSERT), "handler": lambda evt: self.segment_list_panel.insert_selection()},
     ]
 
     accel_entries = []
@@ -538,8 +542,37 @@ class TranscriptionPanel(wx.Panel):
         self.play_given_segments(segments)
         return
 
+      if action == "play_range":
+        self.play_range(message.get("start_ms"), message.get("end_ms"))
+        return
     if self.announce_enabled and message:
       tolk.output(message, interrupt=True)
+
+  def play_range(self, start_ms, end_ms):
+    if not hasattr(self, "file_path"):
+      return
+    if getattr(self, "range_guard", None):
+      try:
+        self.range_guard.Stop()
+      except Exception:
+        pass
+    self.vlc_player.set_position_by_time((start_ms or 0) / 1000.0)
+    self.vlc_player.play()
+    self.current_range_end = (end_ms or 0) / 1000.0
+    self.range_guard = wx.Timer(self)
+    self.Bind(wx.EVT_TIMER, self._on_range_guard, self.range_guard)
+    self.range_guard.Start(25)
+
+  def _on_range_guard(self, event=None):
+    now = self.vlc_player.get_current_playback_seconds()
+    if now >= getattr(self, "current_range_end", 0) - 0.02:
+      try:
+        if getattr(self, "range_guard", None):
+          self.range_guard.Stop()
+      except Exception:
+        pass
+      self.vlc_player.set_position_by_time(self.current_range_end)
+      self.vlc_player.pause()
 
   def _warm_media_duration(self):
     try:

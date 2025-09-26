@@ -94,6 +94,15 @@ class TranscriptionSettingsDialog(wx.Dialog):
     step_sizer.Add(self.resize_step, 1)
     main_sizer.Add(step_sizer, 0, wx.EXPAND | wx.ALL, 6)
 
+    nudge_row = wx.BoxSizer(wx.HORIZONTAL)
+    nudge_label = wx.StaticText(self, label="Selection nudge (ms):")
+    nudge_label.SetMinSize((180, -1))
+    self.selection_nudge_ms = wx.SpinCtrl(self, min=1, max=20000)
+    self.selection_nudge_ms.SetValue(int(self.settings.get("selection_nudge_ms", 200)))
+    nudge_row.Add(nudge_label, 0, wx.ALIGN_CENTER_VERTICAL | wx.RIGHT, 8)
+    nudge_row.Add(self.selection_nudge_ms, 1)
+    main_sizer.Add(nudge_row, 0, wx.EXPAND | wx.ALL, 6)
+
     self.readonly_checkbox = wx.CheckBox(self, label="Enable Readonly Mode on Start")
     self.readonly_checkbox.SetValue(self.settings.get("readonly", True))
     main_sizer.Add(self.readonly_checkbox, 0, wx.ALL, 10)
@@ -146,6 +155,7 @@ class TranscriptionSettingsDialog(wx.Dialog):
     self.settings["video_width"] = self.video_width.GetValue()
     self.settings["video_height"] = self.video_height.GetValue()
     self.settings["resize_step"] = self.resize_step.GetValue()
+    self.settings["selection_nudge_ms"] = int(self.selection_nudge_ms.GetValue())
     self.settings["readonly"] = self.readonly_checkbox.GetValue()
     self.settings["beep"] = self.beep_checkbox.GetValue()
     self.settings["after_action"] = self.action_choice.GetStringSelection()
