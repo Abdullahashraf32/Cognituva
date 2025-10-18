@@ -392,6 +392,12 @@ class SegmentListPanel(wx.Panel):
     self.selection_end_ms = end_ms
     if self.announce_callback:
       self.announce_callback(f"selection end {self._fmt_ms(self.selection_end_ms)}")
+    try:
+      p = self._parent()
+      if hasattr(p, "on_set_selection_end"):
+        p.on_set_selection_end()
+    except Exception:
+      pass
 
   def nudge_selection_start(self):
     if self.selection_start_ms is None:

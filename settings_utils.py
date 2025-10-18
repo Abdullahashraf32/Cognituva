@@ -103,6 +103,10 @@ class TranscriptionSettingsDialog(wx.Dialog):
     nudge_row.Add(self.selection_nudge_ms, 1)
     main_sizer.Add(nudge_row, 0, wx.EXPAND | wx.ALL, 6)
 
+    self.pause_on_set_selection_end_checkbox = wx.CheckBox(self, label="Pause playback after setting selection end")
+    self.pause_on_set_selection_end_checkbox.SetValue(self.settings.get("pause_on_set_selection_end", False))
+    main_sizer.Add(self.pause_on_set_selection_end_checkbox, 0, wx.ALL, 10)
+
     self.readonly_checkbox = wx.CheckBox(self, label="Enable Readonly Mode on Start")
     self.readonly_checkbox.SetValue(self.settings.get("readonly", True))
     main_sizer.Add(self.readonly_checkbox, 0, wx.ALL, 10)
@@ -158,6 +162,7 @@ class TranscriptionSettingsDialog(wx.Dialog):
     self.settings["selection_nudge_ms"] = int(self.selection_nudge_ms.GetValue())
     self.settings["readonly"] = self.readonly_checkbox.GetValue()
     self.settings["beep"] = self.beep_checkbox.GetValue()
+    self.settings["pause_on_set_selection_end"] = self.pause_on_set_selection_end_checkbox.GetValue()
     self.settings["after_action"] = self.action_choice.GetStringSelection()
 
     save_settings(self.settings)

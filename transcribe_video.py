@@ -946,6 +946,15 @@ class TranscriptionPanel(wx.Panel):
       wrapped_lines.append(line)
     return "\n".join(wrapped_lines)
 
+  def on_set_selection_end(self):
+    try:
+      if getattr(self, "pause_on_set_selection_end", False):
+        state = self.vlc_player.player.get_state() if getattr(self, "vlc_player", None) else None
+        if state == vlc.State.Playing:
+          self.vlc_player.pause()
+    except Exception:
+      pass
+
   def on_seek(self, event):
     value = self.seek_slider.GetValue() / 1000
     self.vlc_player.set_position(value)
@@ -1332,6 +1341,7 @@ class TranscriptionPanel(wx.Panel):
     self.readonly_mode = settings.get("readonly", self.readonly_mode)
     self.enable_beep = settings.get("beep", self.enable_beep)
     self.after_transcription_action = settings.get("after_action", self.after_transcription_action)
+    self.pause_on_set_selection_end = settings.get("pause_on_set_selection_end", False)
 
     self.resize_step = int(settings.get("resize_step", 40))
 
