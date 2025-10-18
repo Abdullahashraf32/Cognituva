@@ -1342,6 +1342,7 @@ class TranscriptionPanel(wx.Panel):
     self.enable_beep = settings.get("beep", self.enable_beep)
     self.after_transcription_action = settings.get("after_action", self.after_transcription_action)
     self.pause_on_set_selection_end = settings.get("pause_on_set_selection_end", False)
+    self.replay_after_nudge = settings.get("replay_after_nudge", False)
 
     self.resize_step = int(settings.get("resize_step", 40))
 

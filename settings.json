@@ -11,5 +11,6 @@
   "ctrl_shift_jump": 10.0,
   "resize_step": 20,
   "selection_nudge_ms": 200,
-  "pause_on_set_selection_end": true
+  "pause_on_set_selection_end": true,
+  "replay_after_nudge": true
 }

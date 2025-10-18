@@ -415,6 +415,15 @@ class SegmentListPanel(wx.Panel):
         self.sync_output_box()
     if self.announce_callback:
       self.announce_callback(f"nudge start {amount} ms")
+    try:
+      p = self._parent()
+      if getattr(p, "replay_after_nudge", False):
+        start = getattr(self, "selection_start_ms", None)
+        end = getattr(self, "selection_end_ms", None)
+        if start is not None and end is not None and hasattr(p, "play_range"):
+          p.play_range(start, end)
+    except Exception:
+      pass
 
   def nudge_selection_end(self):
     if self.selection_end_ms is None:
@@ -432,6 +441,15 @@ class SegmentListPanel(wx.Panel):
         self.sync_output_box()
     if self.announce_callback:
       self.announce_callback(f"nudge end {amount} ms")
+    try:
+      p = self._parent()
+      if getattr(p, "replay_after_nudge", False):
+        start = getattr(self, "selection_start_ms", None)
+        end = getattr(self, "selection_end_ms", None)
+        if start is not None and end is not None and hasattr(p, "play_range"):
+          p.play_range(start, end)
+    except Exception:
+      pass
 
   def insert_selection(self):
     if self.selection_start_ms is None or self.selection_end_ms is None:
